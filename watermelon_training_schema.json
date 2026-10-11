@@ -1,0 +1,52 @@
+{
+  "task": "regression",
+  "target": "brix_mean",
+  "target_note": "the sheet's 'Brix sum' column, which is the mean of the top/middle/bottom readings",
+  "id_column": "melon_id",
+  "features": [
+    "field_spot_area_pct",
+    "webbing",
+    "rind_gloss",
+    "shape_uniformity",
+    "bee_sting_density",
+    "spot_present",
+    "field_spot_b",
+    "field_spot_l",
+    "field_spot_a",
+    "rind_b",
+    "mean_pitch",
+    "dominant_freq",
+    "decay_20db_s"
+  ],
+  "n_rows": 25,
+  "n_complete_rows": 19,
+  "n_complete_rows_ignoring_stripe_width": 19,
+  "missing_allowed": true,
+  "excluded": {
+    "no": "identifier (kept separately as melon_id, not a feature)",
+    "Name": "identifier - unique per melon, a model can memorise it",
+    "type": "variety label - excluded by choice; the model predicts from what was measured, not from which variety it is",
+    "Brix top": "component of the target - including it leaks the answer",
+    "Brix middle": "component of the target - including it leaks the answer",
+    "Brix bottom": "component of the target - including it leaks the answer",
+    "Brix sum": "this is the target itself",
+    "n_knocks": "diagnostic: how many taps were detected, not a melon property",
+    "n_clips": "diagnostic: how many recordings exist",
+    "duration_s": "diagnostic: length of the analysis window",
+    "clip_duration_s": "diagnostic: how long you recorded for",
+    "rind_px": "scale artefact: pixel area depends on camera distance",
+    "n_views": "diagnostic: how many usable photos this melon had",
+    "stripe_width_sonya_only": "blank for all 14 kinnaree melons (dark rind, no stripes found). Whether it is blank reveals the variety, so keeping it would leak type back in after type was dropped."
+  },
+  "mechanism_backed_features": [
+    "dominant_freq",
+    "mean_pitch",
+    "decay_20db_s"
+  ],
+  "near_duplicate_pairs": [],
+  "caveats": [
+    "n=25: judge models by cross-validated error, never by training-set fit.",
+    "dominant_freq and mean_pitch estimate the same resonant frequency.",
+    "frequency features are confounded by melon size; no mass was recorded."
+  ]
+}
