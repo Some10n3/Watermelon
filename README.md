@@ -28,7 +28,9 @@ pip install -r requirements.txt
 
 Run these in order from the repo root. Each step reads what the previous one wrote.
 
-1. **Features.** Open `watermelon_features.ipynb` and run all cells. It reads `photos/` and `audio/` and writes `watermelon_features.csv`, `model/watermelon_training.csv` and `cues.json`. Processing the photos takes a few minutes. Steps 24–26 read `results/cue_results.csv` for the scatter plot, so they need step 2 below to have run at least once; the rest of the notebook does not.
+**First time, from a clean checkout**, run 1 → 2 → 3 → 4, then re-run the notebook's last two cells (steps 25–26) to draw the cue scatter. Those two cells read the 1A results that step 2 produces, so on a first pass they print a "not found" note and skip instead of failing. Everything afterwards is just 1 → 2 → 3 → 4, or only 2 → 3 → 4 if the photos and recordings have not changed.
+
+1. **Features.** Open `watermelon_features.ipynb` and run all cells. It reads `photos/` and `audio/` and writes `watermelon_features.csv`, `model/watermelon_training.csv` and `cues.json`. Processing the photos takes a few minutes.
 2. **1A — each cue on its own.** Spearman and a 10,000-shuffle permutation test, both plain and partial (controlling for variety), with a best-of-7 family correction and an acquisition-order confound check:
    ```bash
    python model/analysis_1a.py
