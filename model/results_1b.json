@@ -5845,6 +5845,140 @@
       "error": 0.986793177505735
     }
   ],
+  "ranking": [
+    {
+      "name": "primary",
+      "kind": "model",
+      "pairwise": 0.6387959866220736,
+      "best_of_3_gain": 0.3485199999294831,
+      "best_of_3_hit": 0.4268,
+      "rho_oof": 0.3743027574528895,
+      "pairwise_sonya": 0.7090909090909091,
+      "pairwise_kinnaree": 0.5222222222222223,
+      "direction": "follow the folk rule",
+      "pairwise_best": 0.6387959866220736
+    },
+    {
+      "name": "all_cues",
+      "kind": "model",
+      "pairwise": 0.6488294314381271,
+      "best_of_3_gain": 0.4077116665679332,
+      "best_of_3_hit": 0.42245,
+      "rho_oof": 0.4231583075006973,
+      "pairwise_sonya": 0.7454545454545455,
+      "pairwise_kinnaree": 0.5555555555555556,
+      "direction": "follow the folk rule",
+      "pairwise_best": 0.6488294314381271
+    },
+    {
+      "name": "all_measured",
+      "kind": "model",
+      "pairwise": 0.5986622073578596,
+      "best_of_3_gain": 0.3104499998991332,
+      "best_of_3_hit": 0.3657,
+      "rho_oof": 0.29774957273230884,
+      "pairwise_sonya": 0.6909090909090909,
+      "pairwise_kinnaree": 0.4666666666666667,
+      "direction": "follow the folk rule",
+      "pairwise_best": 0.5986622073578596
+    },
+    {
+      "name": "field_spot_area_pct",
+      "kind": "cue",
+      "pairwise": 0.4431438127090301,
+      "best_of_3_gain": -0.4256416667115167,
+      "best_of_3_hit": 0.25205,
+      "rho_oof": null,
+      "pairwise_sonya": 0.33636363636363636,
+      "pairwise_kinnaree": 0.5777777777777777,
+      "direction": "do the OPPOSITE of the folk rule",
+      "pairwise_best": 0.5568561872909699
+    },
+    {
+      "name": "webbing",
+      "kind": "cue",
+      "pairwise": 0.5886287625418061,
+      "best_of_3_gain": 0.2979366666846332,
+      "best_of_3_hit": 0.4235,
+      "rho_oof": null,
+      "pairwise_sonya": 0.5454545454545454,
+      "pairwise_kinnaree": 0.6444444444444445,
+      "direction": "follow the folk rule",
+      "pairwise_best": 0.5886287625418061
+    },
+    {
+      "name": "rind_gloss",
+      "kind": "cue",
+      "pairwise": 0.3110367892976589,
+      "best_of_3_gain": -0.6612999999426167,
+      "best_of_3_hit": 0.1528,
+      "rho_oof": null,
+      "pairwise_sonya": 0.2727272727272727,
+      "pairwise_kinnaree": 0.4111111111111111,
+      "direction": "do the OPPOSITE of the folk rule",
+      "pairwise_best": 0.6889632107023411
+    },
+    {
+      "name": "shape_uniformity",
+      "kind": "cue",
+      "pairwise": 0.4782608695652174,
+      "best_of_3_gain": -0.010124999997666747,
+      "best_of_3_hit": 0.3161,
+      "rho_oof": null,
+      "pairwise_sonya": 0.4,
+      "pairwise_kinnaree": 0.4888888888888889,
+      "direction": "do the OPPOSITE of the folk rule",
+      "pairwise_best": 0.5217391304347826
+    },
+    {
+      "name": "bee_sting_density",
+      "kind": "cue",
+      "pairwise": 0.47157190635451507,
+      "best_of_3_gain": -0.0615750000112668,
+      "best_of_3_hit": 0.35455,
+      "rho_oof": null,
+      "pairwise_sonya": 0.45454545454545453,
+      "pairwise_kinnaree": 0.4,
+      "direction": "do the OPPOSITE of the folk rule",
+      "pairwise_best": 0.5284280936454849
+    },
+    {
+      "name": "mean_pitch",
+      "kind": "cue",
+      "pairwise": 0.5752508361204013,
+      "best_of_3_gain": 0.17005499991023315,
+      "best_of_3_hit": 0.42,
+      "rho_oof": null,
+      "pairwise_sonya": 0.509090909090909,
+      "pairwise_kinnaree": 0.6222222222222222,
+      "direction": "follow the folk rule",
+      "pairwise_best": 0.5752508361204013
+    },
+    {
+      "name": "decay_20db_s",
+      "kind": "cue",
+      "pairwise": 0.6555183946488294,
+      "best_of_3_gain": 0.5301216665856832,
+      "best_of_3_hit": 0.49995,
+      "rho_oof": null,
+      "pairwise_sonya": 0.7454545454545455,
+      "pairwise_kinnaree": 0.6222222222222222,
+      "direction": "follow the folk rule",
+      "pairwise_best": 0.6555183946488294
+    },
+    {
+      "name": "blind pick",
+      "kind": "baseline",
+      "pairwise": 0.5,
+      "best_of_3_gain": -0.0032616666670167533,
+      "best_of_3_hit": 0.339,
+      "rho_oof": null,
+      "pairwise_sonya": 0.5,
+      "pairwise_kinnaree": 0.5,
+      "direction": "follow the folk rule",
+      "pairwise_best": 0.5
+    }
+  ],
   "cue_correlation": {
     "columns": [
       "field_spot_area_pct",

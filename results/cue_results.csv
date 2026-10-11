@@ -1,8 +1,8 @@
-column,cue,spearman_rho,p_single,p_best_of_7,verdict,folk
-rind_gloss,gloss,0.5436,0.0044,0.0357,supported,OPPOSITE
-decay_20db_s,sound,-0.4457,0.0261,0.169,suggestive,as claimed
-webbing,webbing,0.2685,0.1928,0.7583,no evidence,as claimed
-mean_pitch,sound,-0.2112,0.3095,0.916,no evidence,as claimed
-field_spot_area_pct,field_spot,-0.2057,0.3114,0.926,no evidence,OPPOSITE
-bee_sting_density,bee_stings,-0.0835,0.6903,0.9995,no evidence,flat
-shape_uniformity,shape,0.0758,0.7096,0.9996,no evidence,flat
+column,cue,spearman_rho,p_single,p_best_of_7,partial_rho,partial_p_single,partial_p_best_of_7,rho_sonya,rho_kinnaree,rho_vs_order,verdict_plain,verdict,folk
+rind_gloss,gloss,0.5436,0.0054,0.0398,0.501,0.0097,0.0892,0.6818,0.2222,0.2123,supported,suggestive,OPPOSITE
+decay_20db_s,sound,-0.4457,0.0264,0.1696,-0.4218,0.0337,0.2464,-0.6667,-0.2898,-0.0368,suggestive,suggestive,as claimed
+mean_pitch,sound,-0.2112,0.3052,0.9145,-0.2589,0.2058,0.8042,-0.0182,-0.3542,0.2292,no evidence,no evidence,as claimed
+webbing,webbing,0.2685,0.192,0.7591,0.2067,0.3298,0.9303,0.2091,0.4268,0.0446,no evidence,no evidence,as claimed
+shape_uniformity,shape,0.0758,0.7137,0.9999,0.1951,0.353,0.9465,0.3182,0.0704,-0.2254,no evidence,no evidence,OPPOSITE
+field_spot_area_pct,field_spot,-0.2057,0.317,0.9247,-0.1381,0.5285,0.9931,-0.4419,0.1913,-0.0627,no evidence,no evidence,OPPOSITE
+bee_sting_density,bee_stings,-0.0835,0.6831,0.9994,-0.0681,0.7691,1.0,-0.0727,-0.2552,0.0285,no evidence,no evidence,flat

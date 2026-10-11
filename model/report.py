@@ -404,23 +404,73 @@ absent_rows = "".join(f"<li><b>{escape(c)}</b> &mdash; {escape(w)}</li>"
 
 with open(HERE.parent / "results" / "cue_results.csv", newline="", encoding="utf-8") as f:
     A1 = list(csv.DictReader(f))
+NUMCOLS = ("spearman_rho", "p_single", "p_best_of_7", "partial_rho",
+           "partial_p_single", "partial_p_best_of_7", "rho_sonya",
+           "rho_kinnaree", "rho_vs_order")
 for r in A1:
-    for k in ("spearman_rho", "p_single", "p_best_of_7"):
+    for k in NUMCOLS:
         r[k] = float(r[k])
+C1A = json.loads((HERE.parent / "results" / "analysis_1a.json").read_text(
+    encoding="utf-8"))["confound"]
 
+# the preregistered statistic is the partial one, so that is what is plotted
 a1_svg = divbar(
-    [(r["column"], r["spearman_rho"],
-      f"{r['column']}: rho {r['spearman_rho']:+.3f}, p (best of 7) "
-      f"{r['p_best_of_7']:.3f}, {r['verdict']}")
-     for r in sorted(A1, key=lambda r: -abs(r["spearman_rho"]))])
+    [(r["column"], r["partial_rho"],
+      f"{r['column']}: partial rho {r['partial_rho']:+.3f} (plain "
+      f"{r['spearman_rho']:+.3f}), p best-of-7 {r['partial_p_best_of_7']:.3f}, "
+      f"{r['verdict']}")
+     for r in sorted(A1, key=lambda r: -abs(r["partial_rho"]))])
 
 A1_PILL = {"supported": "ok", "suggestive": "", "no evidence": "no"}
 a1_tab = table(
-    ["column", "cue", "rho", "p single", "p best of 7", "verdict", "folklore"],
+    ["column", "cue", "plain rho", "partial rho", "p best of 7", "sonya",
+     "kinnaree", "verdict", "folklore"],
     [[f"<code>{escape(r['column'])}</code>", escape(r["cue"]),
-      f"{r['spearman_rho']:+.3f}", f"{r['p_single']:.3f}", f"{r['p_best_of_7']:.3f}",
-      f'<span class="pill {A1_PILL[r["verdict"]]}">{escape(r["verdict"])}</span>',
+      f"{r['spearman_rho']:+.3f}", f"<b>{r['partial_rho']:+.3f}</b>",
+      f"{r['partial_p_best_of_7']:.3f}",
+      f"{r['rho_sonya']:+.3f}", f"{r['rho_kinnaree']:+.3f}",
+      f'<span class="pill {A1_PILL[r["verdict"]]}">{escape(r["verdict"])}</span>'
+      + ("" if r["verdict"] == r["verdict_plain"] else
+         f' <span class="cap">was &ldquo;{escape(r["verdict_plain"])}&rdquo; '
+         f'without the control</span>'),
       escape(r["folk"])] for r in A1], "num")
+
+order_tab = table(
+    ["cue column", "rho vs shooting order", "cue &harr; Brix controlling for order"],
+    [[f"<code>{escape(c)}</code>", f"{v:+.3f}",
+      f"{C1A['cue_brix_controlling_order'][c]:+.3f}"]
+     for c, v in sorted(C1A["cue_vs_order"].items(), key=lambda kv: -abs(kv[1]))],
+    "num")
+
+blocks = " &middot; ".join(
+    f"<b>{escape(v)}</b> melons {min(ids)}&ndash;{max(ids)}"
+    for v, ids in C1A["variety_blocks"].items())
+
+RANK = R["ranking"]
+rank_tab = table(
+    ["scorer", "kind", "pairwise", "best-of-3 gain", "best-of-3 hit",
+     "&rho; OOF", "within sonya", "within kinnaree"],
+    [[f"<code>{escape(r['name'])}</code>", escape(r["kind"]),
+      f"<b>{r['pairwise']:.3f}</b>", f"{r['best_of_3_gain']:+.3f}",
+      f"{r['best_of_3_hit']:.3f}",
+      "&mdash;" if r["rho_oof"] is None else f"{r['rho_oof']:+.3f}",
+      f"{r['pairwise_sonya']:.3f}", f"{r['pairwise_kinnaree']:.3f}"]
+     for r in sorted(RANK, key=lambda r: -r["pairwise_best"])], "num")
+
+rank_svg = dotplot(
+    [(r["name"], r["pairwise"], 0.0,
+      f"{r['name']}: pairwise {r['pairwise']:.3f}, best-of-3 gain "
+      f"{r['best_of_3_gain']:+.3f} degBrix, picks the sweetest of 3 "
+      f"{100*r['best_of_3_hit']:.0f}% of the time")
+     for r in sorted(RANK, key=lambda r: -r["pairwise"])],
+    ref=0.5, ref_label="coin flip 0.500",
+    color=lambda k: ("var(--s2)" if k == "blind pick"
+                     else "var(--s1)" if k in ("primary", "all_cues",
+                                               "all_measured")
+                     else "var(--s3)"))
+
+best_cue = max((r for r in RANK if r["kind"] == "cue"),
+               key=lambda r: r["pairwise_best"])
 
 VERDICT = ("MET" if (crit_mae and crit_ci) else "NOT MET")
 
@@ -503,6 +553,39 @@ the average? &nbsp;&middot;&nbsp; n = {R['n_melons']} melons
 &nbsp;&middot;&nbsp; generated {datetime.now():%Y-%m-%d %H:%M}</p>
 
 <section>
+  <h2>Can it help you CHOOSE a melon?</h2>
+  <p class="lede">MAE asks how close the predicted number is. A shopper never
+  needs the number &mdash; they need to pick the better melon out of the few in
+  front of them. That is a ranking question, and it is the one the project is
+  actually about.</p>
+  <ul>
+    <li><b>Pairwise</b> &mdash; over all 300 melon pairs, how often the score
+      puts the sweeter one first. Coin flip = 0.500.</li>
+    <li><b>Best-of-3 gain</b> &mdash; pick 3 melons at random, choose one by the
+      score; how many &deg;Brix sweeter than a blind pick. Chance = 0.000.</li>
+    <li><b>Best-of-3 hit</b> &mdash; how often that choice is the actual
+      sweetest of the three. Chance = 0.333.</li>
+    <li><b>Within sonya / kinnaree</b> &mdash; the same pairwise question among
+      melons of one variety only, which is what you face at one stall.</li>
+  </ul>
+  {rank_svg}
+  <div class="scroll">{rank_tab}</div>
+  <p class="cap">Single cues follow the <b>folk</b> direction, so below 0.500
+  means following the folk rule is worse than guessing &mdash; the rule is
+  backwards. <code>rind_gloss</code> at
+  {[r for r in RANK if r['name']=='rind_gloss'][0]['pairwise']:.3f} is the clearest
+  case: invert it and it becomes
+  {1-[r for r in RANK if r['name']=='rind_gloss'][0]['pairwise']:.3f}.</p>
+  <p class="cap"><b>The models do not win here.</b>
+  <code>{escape(best_cue['name'])}</code> alone reaches
+  {best_cue['pairwise_best']:.3f} pairwise and picks the sweetest of three
+  {100*best_cue['best_of_3_hit']:.0f}% of the time, against 33% for a blind
+  pick. Ridge shrinks predictions toward the mean, which lowers squared error
+  but compresses the ordering &mdash; so optimising MAE actively costs you on
+  the task that matters.</p>
+</section>
+
+<section>
   <h2>Phase 1A: does each cue matter on its own?</h2>
   <p class="lede">Spearman correlation of each cue column with Brix, and a
   permutation test: Brix shuffled 10,000 times. <i>p single</i> is how often chance
@@ -511,10 +594,45 @@ the average? &nbsp;&middot;&nbsp; n = {R['n_melons']} melons
   below 0.05; suggestive = only p single below 0.05.</p>
   {a1_svg}
   <div class="scroll">{a1_tab}</div>
-  <p class="cap">Folklore compares the sign with the folk claim in
-  <code>cues.json</code>. Rind gloss is the only supported cue, and it goes the
-  opposite way: shinier melons were sweeter. Source:
-  <code>results/cue_results.csv</code>, written by notebook step 26.</p>
+  <p class="cap"><b>The verdict comes from the partial correlation</b>, because
+  that is what the proposal preregistered: &ldquo;partial Spearman &rho; with
+  &deg;Brix, controlling for variety&rdquo;. Plain &rho; is kept beside it
+  because the gap between the two measures how much of an apparent effect is
+  really a between-cultivar difference &mdash; drop it and a reader cannot tell
+  whether variety mattered. The null permutes Brix <i>within</i> each variety,
+  so it tests &ldquo;does this cue do anything beyond telling you which cultivar
+  you bought?&rdquo;</p>
+  <p class="cap">Applying the control costs <code>rind_gloss</code> its
+  supported verdict (p best-of-7 0.036 &rarr; 0.089), so <b>no cue is supported
+  under the preregistered analysis</b>. Note also that gloss nearly vanishes
+  within kinnaree (+0.222 vs +0.682 in sonya), while
+  <code>decay_20db_s</code> barely moves under the control and keeps its sign in
+  both varieties. Source: <code>results/cue_results.csv</code>, written by
+  <code>model/analysis_1a.py</code>.</p>
+</section>
+
+<section>
+  <h2>Is gloss measuring the melon, or the lighting?</h2>
+  <p class="lede"><code>rind_gloss</code> counts specular-highlight pixels,
+  which depend on lamp angle and exposure as well as on the fruit &mdash; and
+  the photos had no colour card and the lighting was not fixed. Photo filenames
+  are sequential iPhone numbers, so <b>melon number is the shooting order</b>
+  and the worry is directly testable.</p>
+  <div class="scroll">{order_tab}</div>
+  <p class="cap"><b>Cleared.</b> No cue drifts strongly with shooting order
+  (worst |&rho;| = {max(abs(v) for v in C1A['cue_vs_order'].values()):.3f}),
+  Brix itself does not drift
+  (&rho; = {C1A['brix_vs_order']['rho']:+.3f}, p =
+  {C1A['brix_vs_order']['p']:.3f}), and gloss&harr;Brix survives controlling for
+  order at
+  {C1A['cue_brix_controlling_order']['rind_gloss']:+.3f}, barely moved from
+  {[r for r in A1 if r['column']=='rind_gloss'][0]['spearman_rho']:+.3f}. The
+  &ldquo;lighting drifted and manufactured the correlation&rdquo; story is not
+  supported.</p>
+  <p class="cap"><b>But the design has a real weakness:</b> {blocks}. The two
+  varieties were bought and photographed in blocks, so any session-level effect
+  is inseparable from variety by construction. Interleave the two varieties
+  across collection days next time.</p>
 </section>
 
 <section>

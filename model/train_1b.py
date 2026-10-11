@@ -302,6 +302,83 @@ per_melon = [dict(melon_id=int(m), variety=str(v), actual=float(a),
                   predicted=float(p), error=float(p - a))
              for m, v, a, p in zip(df[ID], variety, y, oof_primary)]
 
+# MAE asks "how close is the number". A shopper never needs the number - they
+# need to pick the better melon out of the few in front of them, which is a
+# ranking question. The two come apart: ridge shrinks predictions toward the
+# mean, which lowers squared error but compresses the ordering.
+#
+# Single cues are oriented by their FOLK direction, not by the sign we observed,
+# so these answer "does following this folk rule help?". Below 0.5 means
+# following it is worse than guessing - the rule is backwards.
+import itertools
+
+PAIRS = list(itertools.combinations(range(len(y)), 2))
+
+
+def pairwise(score: np.ndarray, mask=None) -> float:
+    """Concordance. A tie in the score scores 0.5, the usual convention - without
+    it an all-ties scorer lands wherever the index order happens to fall rather
+    than on 0.500."""
+    ok = tot = 0.0
+    for i, j in PAIRS:
+        if y[i] == y[j] or (mask is not None and not (mask[i] and mask[j])):
+            continue
+        tot += 1
+        if score[i] == score[j]:
+            ok += 0.5
+        else:
+            ok += (score[i] > score[j]) == (y[i] > y[j])
+    return ok / tot if tot else float("nan")
+
+
+def best_of_k(score: np.ndarray, k: int = 3, trials: int = 20_000):
+    r = np.random.default_rng(SEED)
+    gain, hit = [], 0
+    for _ in range(trials):
+        ix = r.choice(len(y), size=k, replace=False)
+        pick = ix[np.argmax(score[ix])]
+        gain.append(y[pick] - y[ix].mean())
+        hit += int(y[pick] == y[ix].max())
+    return float(np.mean(gain)), hit / trials
+
+
+def rank_row(name, score, kind, rho=None):
+    pw = pairwise(score)
+    g, h = best_of_k(score)
+    w = {v: pairwise(score, variety == v) for v in np.unique(variety)}
+    return dict(name=name, kind=kind, pairwise=pw, best_of_3_gain=g,
+                best_of_3_hit=h, rho_oof=rho,
+                pairwise_sonya=w.get("sonya"), pairwise_kinnaree=w.get("kinnaree"),
+                direction=("follow the folk rule" if pw >= 0.5
+                           else "do the OPPOSITE of the folk rule"),
+                pairwise_best=max(pw, 1 - pw))
+
+
+ranking = []
+for sname in ("primary", "all_cues", "all_measured"):
+    pred = repeated_oof(SETS[sname])[0]
+    ranking.append(rank_row(sname, pred, "model",
+                            rho=float(spearmanr(pred, y).statistic)))
+for _cue, _spec in cues["cues"].items():
+    for _col in _spec["columns"]:
+        ranking.append(rank_row(_col, _spec["folk_direction"]
+                                * df[_col].to_numpy(float), "cue"))
+ranking.append(rank_row("blind pick", np.zeros(len(y)), "baseline"))
+
+print(f"\n{'=' * 78}\nRANKING - can it help someone CHOOSE?\n{'=' * 78}")
+print(f"{'scorer':22s} {'kind':9s} {'pairwise':>9s} {'bo3 gain':>9s} "
+      f"{'bo3 hit':>8s} {'rho_oof':>8s} {'sonya':>7s} {'kinn':>7s}")
+print("-" * 78)
+for r in sorted(ranking, key=lambda r: -r["pairwise_best"]):
+    rho = f"{r['rho_oof']:+8.3f}" if r["rho_oof"] is not None else " " * 8
+    print(f"{r['name']:22s} {r['kind']:9s} {r['pairwise']:9.3f} "
+          f"{r['best_of_3_gain']:+9.3f} {r['best_of_3_hit']:8.3f} {rho} "
+          f"{r['pairwise_sonya']:7.3f} {r['pairwise_kinnaree']:7.3f}")
+print("\nchance: pairwise 0.500, gain 0.000, hit 0.333 (best of 3)")
+print("Cues follow the FOLK direction, so below 0.500 means the rule is backwards.")
+print("sonya/kinn columns ask whether it still works among melons of ONE variety,")
+print("which is the question a shopper at one stall actually faces.")
+
 corr = df[ALL_CUE_COLS].corr(method="spearman").round(3)
 print(f"\n{'=' * 74}\nCUE REDUNDANCY   (|rho| > 0.5 between cues)\n{'=' * 74}")
 pairs = [(a, b, float(corr.loc[a, b])) for i, a in enumerate(corr.columns)
@@ -336,6 +413,7 @@ payload = {
     "variety_test": vtest,
     "learning_curve": curve,
     "per_melon": per_melon,
+    "ranking": ranking,
     "cue_correlation": {"columns": list(corr.columns),
                         "matrix": corr.values.tolist(),
                         "redundant_pairs": pairs},
