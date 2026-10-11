@@ -1,0 +1,68 @@
+{
+  "target": "brix_mean",
+  "id_column": "melon_id",
+  "cues": {
+    "field_spot": {
+      "columns": [
+        "field_spot_area_pct"
+      ],
+      "folk_direction": 1,
+      "primary": true
+    },
+    "webbing": {
+      "columns": [
+        "webbing"
+      ],
+      "folk_direction": 1,
+      "primary": true
+    },
+    "gloss": {
+      "columns": [
+        "rind_gloss"
+      ],
+      "folk_direction": -1,
+      "primary": false
+    },
+    "shape": {
+      "columns": [
+        "shape_uniformity"
+      ],
+      "folk_direction": -1,
+      "primary": false
+    },
+    "bee_stings": {
+      "columns": [
+        "bee_sting_density"
+      ],
+      "folk_direction": 1,
+      "primary": false
+    },
+    "sound": {
+      "columns": [
+        "mean_pitch",
+        "decay_20db_s"
+      ],
+      "folk_direction": -1,
+      "primary": true
+    }
+  },
+  "absent_cues": {
+    "weight": "no mass recorded; \"heavy for its size\" is untestable",
+    "stripe_width": "blank for all 14 kinnaree melons; blankness reveals variety"
+  },
+  "all_complete_columns": [
+    "field_spot_area_pct",
+    "webbing",
+    "rind_gloss",
+    "shape_uniformity",
+    "bee_sting_density",
+    "spot_present",
+    "rind_b",
+    "mean_pitch",
+    "dominant_freq",
+    "decay_20db_s"
+  ],
+  "mean_baseline_mae": 1.0796,
+  "target_mae_15pct": 0.9176,
+  "n_melons": 25
+}
