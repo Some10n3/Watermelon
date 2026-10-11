@@ -1,0 +1,644 @@
+"""Build report.html from results_1b.json.
+
+Charts are inline SVG against CSS custom properties, not rendered images: a PNG
+cannot restep itself for a dark surface, and every mark here wants a hover label.
+
+Palette is the dataviz reference instance, categorical slots 1-3 (blue, orange,
+aqua), validated all-pairs in both modes. Light-mode aqua sits at 2.74:1 on the
+surface, so the relief rule applies: every chart ships direct labels and a table.
+
+Run:  python report.py        then open report.html, or serve the folder.
+"""
+from __future__ import annotations
+
+import json
+from datetime import datetime
+from html import escape
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+R = json.loads((HERE / "results_1b.json").read_text(encoding="utf-8"))
+
+BASE = R["baseline_mae_cv"]
+BAR = R["success_bar_15pct"]
+SETS = R["feature_sets"]
+PRIMARY_MAE = SETS["primary"]["mae"]
+
+
+# ----------------------------------------------------------------- svg helpers
+def _t(text: str) -> str:
+    return f"<title>{escape(text)}</title>"
+
+
+def dotplot(items, *, ref=None, ref_label="", h=27, w=760, pad_left=168,
+            color=None):
+    """Dot plot with error bars. items: [(label, value, err, tooltip)].
+
+    A dot plot, not bars: every MAE here sits between 0.93 and 1.12, and bars -
+    which must start at zero or they lie about ratios - would render twelve
+    near-identical lengths. A dot encodes position, so a non-zero axis is honest
+    and the differences become visible. The error bar is +-1 fold sd, which is
+    the whole point: most of these gaps are smaller than it.
+    """
+    lo = min(v - e for _, v, e, _ in items)
+    hi_ = max(v + e for _, v, e, _ in items)
+    if ref is not None:
+        lo, hi_ = min(lo, ref), max(hi_, ref)
+    pad = (hi_ - lo) * 0.12 or 0.1
+    lo, hi_ = lo - pad, hi_ + pad
+    plot = w - pad_left - 78
+    X = lambda v: pad_left + plot * (v - lo) / (hi_ - lo)
+    H = len(items) * h
+    marks = []
+    for i, (label, v, e, tip) in enumerate(items):
+        y = i * h + h / 2
+        c = color(label) if color else "var(--s1)"
+        marks.append(
+            f'<text x="{pad_left - 10}" y="{y + 4}" class="lbl" '
+            f'text-anchor="end">{escape(label)}</text>'
+            f'<line x1="{X(v-e):.1f}" y1="{y}" x2="{X(v+e):.1f}" y2="{y}" '
+            f'stroke="{c}" stroke-width="2" opacity=".42"/>'
+            f'<circle cx="{X(v):.1f}" cy="{y}" r="5" fill="{c}" '
+            f'stroke="var(--surface)" stroke-width="2">{_t(tip)}</circle>'
+            f'<text x="{w - 72}" y="{y + 4}" class="val">{v:.3f}</text>')
+    # the reference line is drawn AFTER the marks: emitted first, the marks
+    # painted straight over it and it was invisible
+    refline = ""
+    if ref is not None:
+        rx = X(ref)
+        refline = (f'<line x1="{rx:.1f}" y1="0" x2="{rx:.1f}" y2="{H}" '
+                   f'class="ref"/>'
+                   f'<text x="{rx:.1f}" y="{H + 14}" class="axlbl" '
+                   f'text-anchor="middle">{escape(ref_label)}</text>')
+    ticks = "".join(
+        f'<line x1="{X(t/100):.1f}" y1="0" x2="{X(t/100):.1f}" y2="{H}" '
+        f'class="grid"/>'
+        f'<text x="{X(t/100):.1f}" y="{H + 14}" class="axlbl" '
+        f'text-anchor="middle">{t/100:.2f}</text>'
+        for t in range(int(lo * 100) + (5 - int(lo * 100) % 5), int(hi_ * 100), 5)
+        if ref is None or abs(X(t / 100) - X(ref)) > 26)
+    return (f'<svg viewBox="0 0 {w} {H + 24}" class="chart" role="img">'
+            f'{ticks}{"".join(marks)}{refline}</svg>')
+
+
+def forest(items, w=760, h=34, pad_left=168):
+    """CI forest plot. items: [(label, est, lo, hi, excludes_zero, tooltip)]."""
+    lo_all = min(min(lo, 0) for _, _, lo, _, _, _ in items)
+    hi_all = max(hi for _, _, _, hi, _, _ in items)
+    span = (hi_all - lo_all) or 1
+    plot = w - pad_left - 110
+    x = lambda v: pad_left + plot * (v - lo_all) / span
+    rows = []
+    for i, (label, est, lo, hi, ok, tip) in enumerate(items):
+        y = i * h + h / 2
+        col = "var(--good)" if ok else "var(--muted)"
+        rows.append(
+            f'<text x="{pad_left - 10}" y="{y + 4}" class="lbl" '
+            f'text-anchor="end">{escape(label)}</text>'
+            f'<line x1="{x(lo):.1f}" y1="{y}" x2="{x(hi):.1f}" y2="{y}" '
+            f'stroke="{col}" stroke-width="2"/>'
+            f'<line x1="{x(lo):.1f}" y1="{y-5}" x2="{x(lo):.1f}" y2="{y+5}" '
+            f'stroke="{col}" stroke-width="2"/>'
+            f'<line x1="{x(hi):.1f}" y1="{y-5}" x2="{x(hi):.1f}" y2="{y+5}" '
+            f'stroke="{col}" stroke-width="2"/>'
+            f'<circle cx="{x(est):.1f}" cy="{y}" r="5" fill="{col}" '
+            f'stroke="var(--surface)" stroke-width="2">{_t(tip)}</circle>'
+            f'<text x="{w - 104}" y="{y + 4}" class="val">'
+            f'{est:+.3f} [{lo:+.3f}, {hi:+.3f}]</text>')
+    zx = x(0)
+    return (f'<svg viewBox="0 0 {w} {len(items)*h + 20}" class="chart" role="img">'
+            f'<line x1="{zx:.1f}" y1="0" x2="{zx:.1f}" y2="{len(items)*h}" '
+            f'class="ref"/>'
+            f'<text x="{zx:.1f}" y="{len(items)*h + 13}" class="axlbl" '
+            f'text-anchor="middle">no improvement</text>{"".join(rows)}</svg>')
+
+
+def divbar(items, *, band=None, w=760, h=28, pad_left=140):
+    """Diverging bars around zero. items: [(label, value, tooltip)]."""
+    m = max(abs(v) for _, v, _ in items) * 1.25
+    if band:
+        m = max(m, band * 1.25)
+    plot = w - pad_left - 150
+    mid = pad_left + plot / 2
+    rows = []
+    if band:
+        bw = plot * band / (2 * m)
+        rows.append(f'<rect x="{mid - bw:.1f}" y="0" width="{2*bw:.1f}" '
+                    f'height="{len(items)*h}" class="band"/>'
+                    f'<text x="{mid:.1f}" y="{len(items)*h + 13}" class="axlbl" '
+                    f'text-anchor="middle">+/- 1 fold sd = indistinguishable</text>')
+    for i, (label, v, tip) in enumerate(items):
+        y = i * h
+        bw = plot * abs(v) / (2 * m)
+        x0 = mid if v >= 0 else mid - bw
+        col = "var(--s1)" if v >= 0 else "var(--s2)"
+        rows.append(
+            f'<text x="{pad_left - 10}" y="{y + h/2 + 4}" class="lbl" '
+            f'text-anchor="end">{escape(label)}</text>'
+            f'<rect class="bar" x="{x0:.1f}" y="{y + 5}" width="{max(bw,1.5):.1f}" '
+            f'height="{h - 12}" rx="3" fill="{col}">{_t(tip)}</rect>'
+            f'<text x="{pad_left + plot + 10}" y="{y + h/2 + 4}" class="val">'
+            f'{v:+.3f}</text>')
+    return (f'<svg viewBox="0 0 {w} {len(items)*h + 20}" class="chart" role="img">'
+            f'<line x1="{mid:.1f}" y1="0" x2="{mid:.1f}" y2="{len(items)*h}" '
+            f'class="ref"/>{"".join(rows)}</svg>')
+
+
+def hist(null, real, p, *, w=360, h=130, bins=26):
+    lo, hi = min(min(null), real), max(max(null), real)
+    span = (hi - lo) or 1
+    counts = [0] * bins
+    for v in null:
+        counts[min(bins - 1, int(bins * (v - lo) / span))] += 1
+    cmax = max(counts) or 1
+    bw = (w - 44) / bins
+    bars = "".join(
+        f'<rect x="{30 + i*bw:.1f}" y="{h - 26 - (h-44)*c/cmax:.1f}" '
+        f'width="{bw - 1.4:.1f}" height="{(h-44)*c/cmax:.1f}" fill="var(--muted)" '
+        f'opacity=".5">{_t(f"{c} of {len(null)} shuffles")}</rect>'
+        for i, c in enumerate(counts) if c)
+    rx = 30 + (w - 44) * (real - lo) / span
+    col = "var(--good)" if p < 0.05 else "var(--crit)"
+    return (f'<svg viewBox="0 0 {w} {h}" class="chart" role="img">{bars}'
+            f'<line x1="{rx:.1f}" y1="8" x2="{rx:.1f}" y2="{h-26}" stroke="{col}" '
+            f'stroke-width="2">{_t(f"real MAE {real:.3f}")}</line>'
+            f'<text x="{rx:.1f}" y="{h-13}" class="axlbl" text-anchor="middle" '
+            f'fill="{col}">real {real:.3f}</text>'
+            f'<text x="{w-6}" y="14" class="axlbl" text-anchor="end">'
+            f'shuffled labels</text></svg>')
+
+
+def scatter(points, w=560, h=380, pad=52):
+    xs = [p["actual"] for p in points] + [p["predicted"] for p in points]
+    lo, hi = min(xs) - 0.4, max(xs) + 0.4
+    span = hi - lo
+    X = lambda v: pad + (w - pad - 18) * (v - lo) / span
+    Y = lambda v: (h - pad) - (h - pad - 18) * (v - lo) / span
+    varieties = sorted({p["variety"] for p in points})
+    col = {v: f"var(--s{i+1})" for i, v in enumerate(varieties)}
+    ticks = "".join(
+        f'<line x1="{X(t)}" y1="{Y(lo)}" x2="{X(t)}" y2="{Y(hi)}" class="grid"/>'
+        f'<line x1="{X(lo)}" y1="{Y(t)}" x2="{X(hi)}" y2="{Y(t)}" class="grid"/>'
+        f'<text x="{X(t)}" y="{h-28}" class="axlbl" text-anchor="middle">{t}</text>'
+        f'<text x="{pad-8}" y="{Y(t)+4}" class="axlbl" text-anchor="end">{t}</text>'
+        for t in range(int(lo) + 1, int(hi) + 1))
+    dot = []
+    for p in points:
+        tip = ("melon {id} ({v}): actual {a:.2f}, predicted {q:.2f}"
+               .format(id=p["melon_id"], v=p["variety"], a=p["actual"],
+                       q=p["predicted"]))
+        dot.append(
+            '<circle cx="{cx:.1f}" cy="{cy:.1f}" r="5.5" fill="{c}" '
+            'stroke="var(--surface)" stroke-width="2">{t}</circle>'
+            .format(cx=X(p["actual"]), cy=Y(p["predicted"]),
+                    c=col[p["variety"]], t=_t(tip)))
+    dots = "".join(dot)
+    legend = "".join(
+        f'<circle cx="{pad + 10 + i*110}" cy="18" r="5" fill="{col[v]}"/>'
+        f'<text x="{pad + 22 + i*110}" y="22" class="axlbl">{escape(v)}</text>'
+        for i, v in enumerate(varieties))
+    return (f'<svg viewBox="0 0 {w} {h}" class="chart" role="img">{ticks}'
+            f'<line x1="{X(lo)}" y1="{Y(lo)}" x2="{X(hi)}" y2="{Y(hi)}" '
+            f'class="ref"/>{dots}{legend}'
+            f'<text x="{(w+pad)/2}" y="{h-6}" class="axlbl" text-anchor="middle">'
+            f'actual degBrix</text>'
+            f'<text x="14" y="{h/2}" class="axlbl" text-anchor="middle" '
+            f'transform="rotate(-90 14 {h/2})">predicted degBrix</text></svg>')
+
+
+def linechart(pts, w=560, h=260, pad=54):
+    xs = [p["n"] for p in pts]
+    ys = [p["mae"] + p["sd"] for p in pts] + [p["mae"] - p["sd"] for p in pts]
+    xlo, xhi = min(xs) - 1, max(xs) + 1
+    ylo, yhi = min(ys) - 0.04, max(ys) + 0.04
+    X = lambda v: pad + (w - pad - 18) * (v - xlo) / (xhi - xlo)
+    Y = lambda v: (h - pad) - (h - pad - 18) * (v - ylo) / (yhi - ylo)
+    band = ("M " + " L ".join(f"{X(p['n']):.1f} {Y(p['mae']+p['sd']):.1f}" for p in pts)
+            + " L " + " L ".join(f"{X(p['n']):.1f} {Y(p['mae']-p['sd']):.1f}"
+                                 for p in reversed(pts)) + " Z")
+    line = "M " + " L ".join(f"{X(p['n']):.1f} {Y(p['mae']):.1f}" for p in pts)
+    dot = []
+    for p in pts:
+        tip = "n={n}: MAE {m:.3f} +- {s:.3f}".format(n=p["n"], m=p["mae"],
+                                                     s=p["sd"])
+        dot.append(
+            '<circle cx="{cx:.1f}" cy="{cy:.1f}" r="4.5" fill="var(--s1)" '
+            'stroke="var(--surface)" stroke-width="2">{t}</circle>'
+            '<text x="{cx:.1f}" y="{ty}" class="axlbl" text-anchor="middle">'
+            '{n}</text>'.format(cx=X(p["n"]), cy=Y(p["mae"]), t=_t(tip),
+                                ty=h - 28, n=p["n"]))
+    dots = "".join(dot)
+    bl = BASE
+    return (f'<svg viewBox="0 0 {w} {h}" class="chart" role="img">'
+            f'<line x1="{X(xlo)}" y1="{Y(bl)}" x2="{X(xhi)}" y2="{Y(bl)}" '
+            f'class="ref"/>'
+            f'<text x="{X(xhi)}" y="{Y(bl)-6}" class="axlbl" text-anchor="end">'
+            f'baseline {bl:.3f}</text>'
+            f'<path d="{band}" fill="var(--s1)" opacity=".13"/>'
+            f'<path d="{line}" fill="none" stroke="var(--s1)" stroke-width="2"/>'
+            f'{dots}<text x="{(w+pad)/2}" y="{h-6}" class="axlbl" '
+            f'text-anchor="middle">melons used</text></svg>')
+
+
+def gbar(groups, series, *, w=760, unit="", bh=20, gap=12, pad_left=150):
+    """Grouped bars. groups: [(glabel, [(slabel, value)])]."""
+    vmax = max(v for _, ss in groups for _, v in ss) * 1.14
+    plot = w - pad_left - 70
+    scol = {s: f"var(--s{i+1})" for i, s in enumerate(series)}
+    out, y = [], 0
+    for glabel, ss in groups:
+        out.append(f'<text x="{pad_left - 10}" y="{y + len(ss)*bh/2 + 4}" '
+                   f'class="lbl" text-anchor="end">{escape(glabel)}</text>')
+        for slabel, v in ss:
+            bw = max(2.0, plot * v / vmax)
+            out.append(
+                f'<rect class="bar" x="{pad_left}" y="{y + 2}" width="{bw:.1f}" '
+                f'height="{bh - 4}" rx="3" fill="{scol[slabel]}">'
+                f'{_t(f"{glabel} / {slabel}: {v:.3f}{unit}")}</rect>'
+                f'<text x="{pad_left + bw + 7}" y="{y + bh/2 + 4}" class="val">'
+                f'{v:.3f}</text>')
+            y += bh
+        y += gap
+    legend = "".join(
+        f'<rect x="{pad_left + i*118}" y="{y}" width="11" height="11" rx="2" '
+        f'fill="{scol[s]}"/><text x="{pad_left + 17 + i*118}" y="{y+10}" '
+        f'class="axlbl">{escape(s)}</text>' for i, s in enumerate(series))
+    return (f'<svg viewBox="0 0 {w} {y + 20}" class="chart" role="img">'
+            f'{"".join(out)}{legend}</svg>')
+
+
+def heatmap(cols, matrix):
+    head = "".join(f"<th>{escape(c)}</th>" for c in cols)
+    rows = []
+    for i, c in enumerate(cols):
+        cells = []
+        for j, v in enumerate(matrix[i]):
+            if i == j:
+                cells.append('<td class="diag">1</td>')
+                continue
+            a = min(abs(v), 1) * 0.8
+            hue = "var(--s1)" if v > 0 else "var(--s2)"
+            cells.append(
+                f'<td style="--a:{a:.3f};--c:{hue}" class="hm" '
+                f'title="{escape(c)} vs {escape(cols[j])}: rho {v:+.3f}">'
+                f'{v:+.2f}</td>')
+        rows.append(f"<tr><th>{escape(c)}</th>{''.join(cells)}</tr>")
+    return (f'<table class="hmtab"><thead><tr><th></th>{head}</tr></thead>'
+            f'<tbody>{"".join(rows)}</tbody></table>')
+
+
+def table(headers, rows, cls=""):
+    h = "".join(f"<th>{escape(str(x))}</th>" for x in headers)
+    b = "".join("<tr>" + "".join(f"<td>{x}</td>" for x in r) + "</tr>"
+                for r in rows)
+    return f'<table class="{cls}"><thead><tr>{h}</tr></thead><tbody>{b}</tbody></table>'
+
+
+# ----------------------------------------------------------------- sections
+ORDER = sorted(SETS, key=lambda k: SETS[k]["mae"])
+ABL = {a["cue"]: a for a in R["ablation_per_cue"]}
+BOOT = R["bootstrap_ci"]
+PERM = {p["set"]: p for p in R["permutation_null"]}
+
+crit_mae = PRIMARY_MAE <= BAR
+crit_ci = BOOT["primary"]["excludes_zero"]
+crit_perm = PERM["primary"]["p"] < 0.05
+
+set_bars = dotplot(
+    [(k, SETS[k]["mae"], SETS[k]["mae_sd"],
+      f"{k}: MAE {SETS[k]['mae']:.3f} +- {SETS[k]['mae_sd']:.3f} "
+      f"over 100 folds, {SETS[k]['n_feat']} features") for k in ORDER],
+    ref=BAR, ref_label=f"15% bar {BAR:.3f}",
+    color=lambda k: ("var(--s2)" if k == "baseline_mean"
+                     else "var(--s3)" if k.startswith("minus_")
+                     else "var(--s1)"))
+
+set_table = table(
+    ["feature set", "features", "MAE", "fold sd", "RMSE", "rho OOF", "vs baseline"],
+    [[k, SETS[k]["n_feat"], f"{SETS[k]['mae']:.3f}", f"{SETS[k]['mae_sd']:.3f}",
+      f"{SETS[k]['rmse']:.3f}",
+      "&ndash;" if SETS[k]["rho_oof"] is None else f"{SETS[k]['rho_oof']:+.3f}",
+      f"{100*(SETS[k]['mae']-BASE)/BASE:+.1f}%"] for k in ORDER], "num")
+
+forest_svg = forest([
+    (k, b["improvement"], b["ci_lo"], b["ci_hi"], b["excludes_zero"],
+     f"{k}: {b['improvement']:+.3f} degBrix ({b['pct_of_baseline']:+.1f}% of "
+     f"baseline), 95% CI [{b['ci_lo']:+.3f}, {b['ci_hi']:+.3f}]")
+    for k, b in BOOT.items()])
+
+perm_cards = "".join(
+    f'<div class="sub"><h4>{escape(p["set"])} '
+    f'<span class="pill {"ok" if p["p"]<0.05 else "no"}">p = {p["p"]:.3f}</span></h4>'
+    f'{hist(p["null"], p["real_mae"], p["p"])}'
+    f'<p class="cap">Real MAE {p["real_mae"]:.3f} against a null median of '
+    f'{p["null_median"]:.3f}. {escape(p["reading"])}.</p></div>'
+    for p in R["permutation_null"])
+
+abl_svg = divbar(
+    [(c, ABL[c]["delta_mae"],
+      f"removing {c}: MAE changes by {ABL[c]['delta_mae']:+.3f} "
+      f"({ABL[c]['reading']})")
+     for c in sorted(ABL, key=lambda c: -ABL[c]["delta_mae"])],
+    band=R["ablation_fold_sd"])
+
+lovo = gbar([(t["set"], sorted(t["per_variety"].items()))
+             for t in R["leave_one_variety_out"]],
+            sorted(R["leave_one_variety_out"][0]["per_variety"]), unit=" degBrix")
+
+fam = gbar([(f["model"], [("primary", f["primary"]), ("all_cues", f["all_cues"])])
+            for f in R["model_families"]], ["primary", "all_cues"])
+
+pm = sorted(R["per_melon"], key=lambda p: -abs(p["error"]))
+per_melon_tab = table(
+    ["melon", "variety", "actual", "predicted", "error"],
+    [[p["melon_id"], escape(p["variety"]), f"{p['actual']:.2f}",
+      f"{p['predicted']:.2f}",
+      f'<span class="{"bad" if abs(p["error"])>1.2 else ""}">{p["error"]:+.2f}</span>']
+     for p in pm], "num")
+
+shrink_tab = table(
+    ["feature set", "alpha chosen", "reading"],
+    [[k, f"{v['alpha']:.3f}",
+      "heavy shrinkage &mdash; near the mean baseline" if v["alpha"] > 100
+      else "moderate &mdash; the features are genuinely used"]
+     for k, v in R["shrinkage"].items()], "num")
+
+vt = R["variety_test"]
+variety_tab = table(
+    ["model", "MAE", "reading"],
+    [["variety label alone", f"{vt['variety_only']:.3f}",
+      "no better than the baseline &mdash; variety alone predicts nothing"],
+     ["all_cues", f"{vt['all_cues']:.3f}", "the cues, without the label"],
+     ["all_cues + variety", f"{vt['all_cues_plus_variety']:.3f}",
+      "adding the label makes it worse"]], "num")
+
+redundant = R["cue_correlation"]["redundant_pairs"]
+red_txt = ("".join(f"<li><code>{escape(a)}</code> &harr; <code>{escape(b)}</code> "
+                   f"&rho; = {r:+.3f}</li>" for a, b, r in redundant)
+           or "<li>No pair exceeds |&rho;| 0.5.</li>")
+
+cue_rows = "".join(
+    f"<li><b>{escape(c)}</b> &rarr; <code>{', '.join(escape(x) for x in cols)}</code>"
+    + (' <span class="pill ok">primary</span>' if c in R["primary_cues"] else "")
+    + "</li>" for c, cols in R["cue_columns"].items())
+absent_rows = "".join(f"<li><b>{escape(c)}</b> &mdash; {escape(w)}</li>"
+                      for c, w in R["absent_cues"].items())
+
+VERDICT = ("MET" if (crit_mae and crit_ci) else "NOT MET")
+
+HTML = f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Watermelon Phase 1B</title>
+<style>
+:root{{color-scheme:light;
+ --page:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e;
+ --muted:#898781; --grid:#e1e0d9; --axis:#c3c2b7; --line:rgba(11,11,11,.10);
+ --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a;
+ --good:#0ca30c; --crit:#d03b3b; --warn:#fab219;}}
+@media (prefers-color-scheme:dark){{:root:where(:not([data-theme=light])){{
+ color-scheme:dark;
+ --page:#0d0d0d; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7;
+ --muted:#898781; --grid:#2c2c2a; --axis:#383835; --line:rgba(255,255,255,.10);
+ --s1:#3987e5; --s2:#d95926; --s3:#199e70;}}}}
+:root[data-theme=dark]{{color-scheme:dark;
+ --page:#0d0d0d; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7;
+ --muted:#898781; --grid:#2c2c2a; --axis:#383835; --line:rgba(255,255,255,.10);
+ --s1:#3987e5; --s2:#d95926; --s3:#199e70;}}
+*{{box-sizing:border-box}}
+body{{margin:0;background:var(--page);color:var(--ink);
+ font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}}
+.wrap{{max-width:900px;margin:0 auto;padding:40px 16px 80px}}
+h1{{font-size:28px;margin:0 0 4px;letter-spacing:-.02em}}
+h2{{font-size:19px;margin:0 0 2px;letter-spacing:-.01em}}
+h4{{font-size:14px;margin:0 0 6px;font-weight:600}}
+.sub-head{{color:var(--ink2);margin:0 0 32px;font-size:14px}}
+section{{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+ padding:22px 24px;margin:0 0 18px}}
+.lede{{color:var(--ink2);font-size:14px;margin:2px 0 18px}}
+.chart{{width:100%;height:auto;display:block;margin:4px 0 6px;overflow:visible}}
+.lbl{{font-size:12px;fill:var(--ink2)}}
+.val{{font-size:12px;fill:var(--ink2);font-variant-numeric:tabular-nums}}
+.axlbl{{font-size:11px;fill:var(--muted)}}
+.ref{{stroke:var(--muted);stroke-width:1.5;stroke-dasharray:4 3}}
+.grid{{stroke:var(--grid);stroke-width:1}}
+.band{{fill:var(--muted);opacity:.11}}
+.bar{{transition:opacity .12s}} .bar:hover{{opacity:.78}}
+table{{width:100%;border-collapse:collapse;font-size:13px;margin:10px 0 2px}}
+th,td{{text-align:left;padding:6px 9px;border-bottom:1px solid var(--line)}}
+th{{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;
+ letter-spacing:.04em}}
+.num td+td,.num th+th{{text-align:right;font-variant-numeric:tabular-nums}}
+.verdict{{display:flex;gap:14px;flex-wrap:wrap;margin:6px 0 2px}}
+.vcard{{flex:1;min-width:190px;border:1px solid var(--line);border-radius:10px;
+ padding:14px 16px}}
+.vcard .k{{font-size:11px;color:var(--muted);text-transform:uppercase;
+ letter-spacing:.04em}}
+.vcard .v{{font-size:24px;font-weight:650;margin:3px 0;letter-spacing:-.02em}}
+.vcard .w{{font-size:12px;color:var(--ink2)}}
+.pill{{display:inline-block;font-size:11px;padding:1px 7px;border-radius:20px;
+ border:1px solid var(--line);vertical-align:1px;font-weight:600}}
+.pill.ok{{color:var(--good);border-color:var(--good)}}
+.pill.no{{color:var(--crit);border-color:var(--crit)}}
+.hero{{font-size:34px;font-weight:700;letter-spacing:-.03em;margin:0}}
+.hero.no{{color:var(--crit)}} .hero.ok{{color:var(--good)}}
+.grid2{{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+ gap:18px}}
+.cap{{font-size:12px;color:var(--ink2);margin:4px 0 0}}
+code{{font-size:12px;background:var(--page);padding:1px 5px;border-radius:4px;
+ border:1px solid var(--line)}}
+ul{{margin:6px 0;padding-left:20px}} li{{margin:3px 0;font-size:13px}}
+.bad{{color:var(--crit);font-weight:600}}
+.hmtab td,.hmtab th{{font-size:11px;padding:4px 5px;text-align:center}}
+.hmtab th{{text-transform:none;letter-spacing:0}}
+.hm{{background:color-mix(in oklab,var(--c) calc(var(--a)*100%),var(--surface));
+ font-variant-numeric:tabular-nums}}
+.diag{{color:var(--muted)}}
+.scroll{{overflow-x:auto}}
+footer{{color:var(--muted);font-size:12px;text-align:center;margin-top:26px}}
+</style></head><body><div class="wrap">
+
+<h1>Evaluating Folk Heuristics for Choosing a Watermelon</h1>
+<p class="sub-head">Phase 1B &mdash; does combining the cues predict sweetness
+better than guessing the average? &nbsp;&middot;&nbsp; n = {R['n_melons']} melons
+&nbsp;&middot;&nbsp; generated {datetime.now():%Y-%m-%d %H:%M}</p>
+
+<section>
+  <h2>Verdict</h2>
+  <p class="lede">Both preregistered criteria had to be met.</p>
+  <p class="hero {'ok' if VERDICT=='MET' else 'no'}">Success bar {VERDICT}</p>
+  <div class="verdict">
+    <div class="vcard"><div class="k">MAE vs 15% bar</div>
+      <div class="v">{PRIMARY_MAE:.3f}</div>
+      <div class="w">bar is {BAR:.3f} &middot;
+      <span class="pill {'ok' if crit_mae else 'no'}">
+      {'pass' if crit_mae else 'miss'}</span></div></div>
+    <div class="vcard"><div class="k">95% CI on improvement</div>
+      <div class="v">{BOOT['primary']['improvement']:+.3f}</div>
+      <div class="w">[{BOOT['primary']['ci_lo']:+.3f},
+      {BOOT['primary']['ci_hi']:+.3f}] &middot;
+      <span class="pill {'ok' if crit_ci else 'no'}">
+      {'excludes 0' if crit_ci else 'includes 0'}</span></div></div>
+    <div class="vcard"><div class="k">Permutation test</div>
+      <div class="v">p = {PERM['primary']['p']:.3f}</div>
+      <div class="w">not part of the bar &middot;
+      <span class="pill {'ok' if crit_perm else 'no'}">
+      {'signal' if crit_perm else 'no signal'}</span></div></div>
+  </div>
+  <p class="cap"><b>Reading:</b> the shuffled-label test says the model finds
+  something real, but the melon-level confidence interval cannot rule out zero
+  improvement and the error does not reach the 15% bar. At n={R['n_melons']} that
+  is what a modest true effect looks like. Baseline MAE is {BASE:.3f} &deg;Brix;
+  Brix itself ranges {R['brix']['min']:.1f}&ndash;{R['brix']['max']:.1f}
+  (sd {R['brix']['sd']:.2f}).</p>
+</section>
+
+<section>
+  <h2>What was measured</h2>
+  <p class="lede">One pre-committed column per cue, fixed before any result was
+  read. The sound cue is two features because pitch and decay are different
+  physics &mdash; they correlate &rho; = +0.01 with each other.</p>
+  <div class="grid2">
+    <div><h4>Cues tested &mdash; {len(R['cue_columns'])} cues,
+      {sum(len(v) for v in R['cue_columns'].values())} columns</h4>
+      <ul>{cue_rows}</ul></div>
+    <div><h4>Cues with no column</h4><ul>{absent_rows}</ul></div>
+  </div>
+</section>
+
+<section>
+  <h2>Feature sets</h2>
+  <p class="lede">Lower is better. The dashed line is the 15% success bar.
+  Orange is the baseline; green are ablation variants, which are diagnostics and
+  not candidate headline models.</p>
+  {set_bars}
+  <div class="scroll">{set_table}</div>
+  <p class="cap">Dots, not bars: every value sits between 0.93 and 1.12, and
+  bars &mdash; which have to start at zero &mdash; would render twelve
+  near-identical lengths. The whisker is &plusmn;1 fold sd, and it is the point:
+  most of the gaps between these sets are smaller than their own spread.</p>
+</section>
+
+<section>
+  <h2>Improvement over the baseline, with 95% CI</h2>
+  <p class="lede">Paired bootstrap over melons ({5000} resamples) on out-of-fold
+  absolute errors averaged across 20 different splits. Resampling melons rather
+  than folds is what makes this a claim about melons.</p>
+  {forest_svg}
+  <p class="cap">Averaging over splits first matters: built on a single split
+  this same test reported +22.7% for <code>primary</code> while the 100-fold
+  table said &minus;13.0%, because that one split happened to be kind.</p>
+</section>
+
+<section>
+  <h2>Permutation null</h2>
+  <p class="lede">Labels shuffled {len(R['permutation_null'][0]['null'])} times
+  and the whole pipeline rerun. If the cues meant nothing, shuffled data would
+  score about as well.</p>
+  <div class="grid2">{perm_cards}</div>
+</section>
+
+<section>
+  <h2>Per-cue ablation</h2>
+  <p class="lede">Each cue removed from the full set in turn. Positive means
+  removing it made predictions worse, so it was helping. Dropping the sound cue
+  removes both its columns &mdash; the question is what the knock contributes,
+  not what pitch adds given decay.</p>
+  {abl_svg}
+  <p class="cap">The shaded band is &plusmn;1 fold sd
+  ({R['ablation_fold_sd']:.3f}). Every cue falls inside it, so all six read
+  &ldquo;cannot distinguish&rdquo; &mdash; which is not the same as
+  &ldquo;does not matter&rdquo;.</p>
+</section>
+
+<section>
+  <h2>Does it work on an unseen variety?</h2>
+  <p class="lede">Trained on one variety, tested on the other. This stands in for
+  the preregistered leave-one-vendor-out, since no vendor was recorded.</p>
+  {lovo}
+  <p class="cap">The means sit at or above the {BASE:.3f} baseline: shown a
+  variety it has never seen, the model is no better than guessing. Only two
+  groups, so this is coarse &mdash; but it is the clearest limitation in the
+  result.</p>
+</section>
+
+<section>
+  <h2>Predicted vs actual</h2>
+  <p class="lede">Out-of-fold predictions from <code>primary</code>, averaged over
+  20 splits. The dashed line is perfect prediction.</p>
+  {scatter(R['per_melon'])}
+  <p class="cap">The cloud is flatter than the diagonal &mdash; the model pulls
+  predictions toward the mean, which is what shrinkage does when the features are
+  only weakly informative.</p>
+</section>
+
+<section>
+  <h2>Would more melons help?</h2>
+  <p class="lede">Subsamples of the data, re-evaluated. The band is &plusmn;1 sd
+  across 40 draws.</p>
+  {linechart(R['learning_curve'])}
+  <p class="cap">Still falling at n={R['n_melons']}, so more melons would buy real
+  accuracy rather than just narrower error bars. This is the single highest-value
+  thing left to do.</p>
+</section>
+
+<section>
+  <h2>Is ridge the bottleneck?</h2>
+  <p class="lede">Six model families, same cross-validation budget as the headline
+  table.</p>
+  {fam}
+  <p class="cap">At n={R['n_melons']} the algorithm is not the limiting factor,
+  the data is. Tree models lose to a shrunken linear model, as expected at this
+  size. PLS edges ahead &mdash; it is the standard method in fruit
+  near-infrared work &mdash; but it was not the preregistered model, so promoting
+  it now would be selection after seeing results.</p>
+</section>
+
+<section>
+  <h2>Checks against the obvious objections</h2>
+  <div class="grid2">
+    <div><h4>Is it really just variety?</h4>{variety_tab}
+      <p class="cap">No. The label alone predicts nothing and adding it hurts.
+      Transfer still fails across varieties, which points to the cue&ndash;Brix
+      relationship differing by cultivar rather than the cues proxying the
+      label.</p></div>
+    <div><h4>How hard is ridge shrinking?</h4>{shrink_tab}
+      <p class="cap">Ridge at &alpha;&nbsp;&rarr;&nbsp;&infin; <i>is</i> the mean
+      baseline, so a moderate &alpha; says cross-validation chose to actually use
+      the features.</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>Are the cues measuring the same thing?</h2>
+  <p class="lede">Spearman between cue columns. This is the diagnostic that
+  explains any gap between a cue&rsquo;s own correlation and its ablation.</p>
+  <div class="scroll">{heatmap(R['cue_correlation']['columns'],
+                               R['cue_correlation']['matrix'])}</div>
+  <h4>Pairs above |&rho;| 0.5</h4><ul>{red_txt}</ul>
+</section>
+
+<section>
+  <h2>Per-melon predictions</h2>
+  <p class="lede">Sorted by absolute error, worst first. Useful for the live demo
+  &mdash; and for spotting whether the misses are systematic.</p>
+  <div class="scroll">{per_melon_tab}</div>
+</section>
+
+<section>
+  <h2>Caveats</h2>
+  <ul>{''.join(f'<li>{escape(c)}</li>' for c in R['caveats'])}</ul>
+</section>
+
+<footer>Built by report.py from results_1b.json &middot;
+rerun: <code>python train_1b.py &amp;&amp; python report.py</code></footer>
+</div></body></html>"""
+
+out = HERE / "report.html"
+out.write_text(HTML, encoding="utf-8")
+print(f"wrote {out}  ({len(HTML)/1024:.0f} KB)")
+print(f"verdict: success bar {VERDICT}  "
+      f"(MAE {'pass' if crit_mae else 'miss'}, "
+      f"CI {'excludes 0' if crit_ci else 'includes 0'}, "
+      f"permutation p = {PERM['primary']['p']:.3f})")
+print("\nserve it:  python -m http.server 8777 --directory .")
