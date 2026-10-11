@@ -295,7 +295,41 @@ def table(headers, rows, cls=""):
 
 
 # ----------------------------------------------------------------- sections
-ORDER = sorted(SETS, key=lambda k: SETS[k]["mae"])
+DEFS = R["set_definitions"]
+
+# visual_only and minus_sound are the SAME five columns - sound is the only
+# non-visual cue, so "all cues except sound" and "visual cues only" coincide.
+# Showing both as separate rows implied two findings where there is one.
+DUPES = {a: b for i, a in enumerate(DEFS) for b in list(DEFS)[i + 1:]
+         if DEFS[a] and DEFS[a] == DEFS[b]}
+ORDER = [k for k in sorted(SETS, key=lambda k: SETS[k]["mae"])
+         if k not in DUPES.values()]
+ALIAS = {a: f"{a}  (= {b})" for a, b in DUPES.items()}
+
+SET_WHY = {
+    "baseline_mean": "Floor. No features at all &mdash; predicts the training "
+                     "fold&rsquo;s mean Brix for every melon.",
+    "primary": "The cues the proposal named primary. Cue 2 (weight) has no "
+               "column, so this is 3 cues in 4 columns.",
+    "all_cues": "One pre-committed column per cue. The headline combined model.",
+    "visual_only": "Everything you can see. <b>Identical to minus_sound</b>, "
+                   "because sound is the only non-visual cue.",
+    "audio_only": "The knock alone &mdash; pitch and decay.",
+    "all_measured": "Every complete column in the table, including three that "
+                    "are not any cue&rsquo;s representative. Asks whether "
+                    "boiling each cue down to one number lost signal.",
+}
+for _c in R["cue_columns"]:
+    SET_WHY[f"minus_{_c}"] = (f"Ablation: all_cues with <b>{escape(_c)}</b> "
+                              f"removed, to see what it was contributing.")
+
+defs_table = table(
+    ["feature set", "n", "columns", "what it is"],
+    [[f"<b>{escape(ALIAS.get(k, k))}</b>", len(DEFS[k]),
+      ", ".join(f"<code>{escape(c)}</code>" for c in DEFS[k]) or "&mdash;",
+      SET_WHY.get(k, "")] for k in ORDER])
+
+extra = [c for c in DEFS["all_measured"] if c not in DEFS["all_cues"]]
 ABL = {a["cue"]: a for a in R["ablation_per_cue"]}
 BOOT = R["bootstrap_ci"]
 PERM = {p["set"]: p for p in R["permutation_null"]}
@@ -305,7 +339,7 @@ crit_ci = BOOT["primary"]["excludes_zero"]
 crit_perm = PERM["primary"]["p"] < 0.05
 
 set_bars = dotplot(
-    [(k, SETS[k]["mae"], SETS[k]["mae_sd"],
+    [(ALIAS.get(k, k), SETS[k]["mae"], SETS[k]["mae_sd"],
       f"{k}: MAE {SETS[k]['mae']:.3f} +- {SETS[k]['mae_sd']:.3f} "
       f"over 100 folds, {SETS[k]['n_feat']} features") for k in ORDER],
     ref=BAR, ref_label=f"15% bar {BAR:.3f}",
@@ -315,7 +349,8 @@ set_bars = dotplot(
 
 set_table = table(
     ["feature set", "features", "MAE", "fold sd", "RMSE", "rho OOF", "vs baseline"],
-    [[k, SETS[k]["n_feat"], f"{SETS[k]['mae']:.3f}", f"{SETS[k]['mae_sd']:.3f}",
+    [[escape(ALIAS.get(k, k)), SETS[k]["n_feat"], f"{SETS[k]['mae']:.3f}",
+      f"{SETS[k]['mae_sd']:.3f}",
       f"{SETS[k]['rmse']:.3f}",
       "&ndash;" if SETS[k]["rho_oof"] is None else f"{SETS[k]['rho_oof']:+.3f}",
       f"{100*(SETS[k]['mae']-BASE)/BASE:+.1f}%"] for k in ORDER], "num")
@@ -507,6 +542,18 @@ better than guessing the average? &nbsp;&middot;&nbsp; n = {R['n_melons']} melon
 </section>
 
 <section>
+  <h2>What is in each feature set</h2>
+  <p class="lede">Every set is a fixed list of columns, chosen before any result
+  was read. Nothing here was selected by how well it scored.</p>
+  <div class="scroll">{defs_table}</div>
+  <p class="cap"><b>all_cues vs all_measured:</b> <code>all_cues</code> is one
+  pre-committed column per cue. <code>all_measured</code> adds the
+  {len(extra)} complete columns that are not any cue&rsquo;s representative
+  &mdash; {', '.join(f'<code>{escape(c)}</code>' for c in extra)} &mdash; so it
+  tests whether reducing each cue to a single number lost anything.</p>
+</section>
+
+<section>
   <h2>Feature sets</h2>
   <p class="lede">Lower is better. The dashed line is the 15% success bar.
   Orange is the baseline; green are ablation variants, which are diagnostics and
@@ -521,21 +568,43 @@ better than guessing the average? &nbsp;&middot;&nbsp; n = {R['n_melons']} melon
 
 <section>
   <h2>Improvement over the baseline, with 95% CI</h2>
-  <p class="lede">Paired bootstrap over melons ({5000} resamples) on out-of-fold
-  absolute errors averaged across 20 different splits. Resampling melons rather
-  than folds is what makes this a claim about melons.</p>
+  <p class="lede"><b>What is being sampled: melons.</b> For each of the
+  {R['n_melons']} melons we have two numbers &mdash; how far the model missed,
+  and how far the baseline missed. Subtract them and you get that
+  melon&rsquo;s improvement. Then draw {R['n_melons']} melons <i>with
+  replacement</i> from those {R['n_melons']} (some appear twice, some not at
+  all), average their improvements, and repeat 5,000 times. The middle 95% of
+  those averages is the bar below.</p>
+  <p class="lede">It answers: <b>if we had bought a different
+  {R['n_melons']} melons from the same market, would the model still have beaten
+  guessing?</b> A bar crossing the dashed line means no &mdash; not reliably.</p>
   {forest_svg}
-  <p class="cap">Averaging over splits first matters: built on a single split
-  this same test reported +22.7% for <code>primary</code> while the 100-fold
-  table said &minus;13.0%, because that one split happened to be kind.</p>
+  <p class="cap">Averaging over 20 splits before resampling matters: built on a
+  single split this same test reported +22.7% for <code>primary</code> while the
+  100-fold table said &minus;13.0%, because that one split happened to be kind.
+  Positive numbers mean the model beat the baseline by that many &deg;Brix.</p>
 </section>
 
 <section>
   <h2>Permutation null</h2>
-  <p class="lede">Labels shuffled {len(R['permutation_null'][0]['null'])} times
-  and the whole pipeline rerun. If the cues meant nothing, shuffled data would
-  score about as well.</p>
+  <p class="lede"><b>What is being shuffled: the sweetness values.</b> Take the
+  {R['n_melons']} Brix readings and randomly reassign them to melons &mdash;
+  melon 1 gets melon 17&rsquo;s sweetness. The cue measurements stay with their
+  own melon; only the answers move. Now there is, by construction, no real
+  relationship left. Refit, cross-validate, record the error. Repeat
+  {len(R['permutation_null'][0]['null'])} times.</p>
+  <p class="lede">That builds a picture of <b>what &ldquo;nothing&rdquo; scores
+  on your own data</b>, rather than assuming a formula. The grey histogram is
+  those shuffled runs; the coloured line is the real model. <code>p</code> is
+  the fraction of shuffles that did at least as well.</p>
   <div class="grid2">{perm_cards}</div>
+  <p class="cap"><b>Why this and the bootstrap disagree:</b> they ask different
+  questions. The permutation asks <i>&ldquo;could this be nothing at
+  all?&rdquo;</i> &mdash; and for <code>primary</code>, probably not (p =
+  {PERM['primary']['p']:.3f}). The bootstrap asks <i>&ldquo;how big is it, and
+  is it reliably above zero from melon to melon?&rdquo;</i> &mdash; and there
+  the answer is that it cannot be pinned above zero. A small but real effect
+  produces exactly this pattern.</p>
 </section>
 
 <section>
