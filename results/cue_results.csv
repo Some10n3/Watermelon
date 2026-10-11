@@ -1,0 +1,8 @@
+column,cue,spearman_rho,p_single,p_best_of_7,verdict,folk
+rind_gloss,gloss,0.5436,0.0044,0.0357,supported,OPPOSITE
+decay_20db_s,sound,-0.4457,0.0261,0.169,suggestive,as claimed
+webbing,webbing,0.2685,0.1928,0.7583,no evidence,as claimed
+mean_pitch,sound,-0.2112,0.3095,0.916,no evidence,as claimed
+field_spot_area_pct,field_spot,-0.2057,0.3114,0.926,no evidence,OPPOSITE
+bee_sting_density,bee_stings,-0.0835,0.6903,0.9995,no evidence,flat
+shape_uniformity,shape,0.0758,0.7096,0.9996,no evidence,flat
