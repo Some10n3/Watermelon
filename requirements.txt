@@ -1,0 +1,11 @@
+# numpy < 2 and opencv-python < 5 keep scipy and opencv compatible (see notebook step 0)
+numpy<2
+opencv-python<5
+pandas
+scipy
+matplotlib
+pillow
+pillow-heif
+librosa
+av
+scikit-learn

@@ -1,14 +1,6 @@
 """Phase 1B: does combining the cues predict Brix better than guessing the mean?
 
-Reads the cue contract from cues.json and the table from watermelon_training.csv,
-so the cue -> column mapping is defined in exactly one place (the last cell of
-watermelon_features.ipynb) rather than restated here.
-
-Writes results_1b.csv (feature-set table) and results_1b.json (everything,
-including the sections that are only printed). Run report.py afterwards to turn
-the JSON into an HTML page.
-
-Run:  python train_1b.py
+Run:  python model/train_1b.py
 """
 from __future__ import annotations
 
@@ -31,24 +23,14 @@ HERE = Path(__file__).resolve().parent
 SEED = 0
 N_PERM = 1000
 N_BOOT = 5000
-ALPHAS = np.logspace(-2, 4, 30)      # at n=25 the optimum sits high; give it room
+ALPHAS = np.logspace(-2, 4, 30)
 
-# dedupe: HERE and HERE.parent/"model" are the same directory when this script
-# lives in model/, which made the duplicate check report one file as two.
 SEARCH = list(dict.fromkeys(
     [HERE, HERE.parent, HERE.parent / "model", HERE / "model"]))
 
 
 def locate(name: str) -> Path:
-    """Find a data file whether it sits beside this script, at the repo root, or
-    in model/.
-
-    Resolved by search rather than a fixed relative path: the repo was
-    restructured after this script was first written, and a search survives the
-    next move too. If the same filename exists in more than one place the newest
-    wins and the others are reported - the notebook writes to its own working
-    directory, so a stale duplicate is a real possibility.
-    """
+    """Find a data file beside this script, at the repo root, or in model/; newest wins."""
     found = [d / name for d in SEARCH if (d / name).is_file()]
     if not found:
         raise FileNotFoundError(
@@ -63,7 +45,6 @@ def locate(name: str) -> Path:
     return found[0]
 
 
-# ---------------------------------------------------------------- load
 cues = json.loads(locate("cues.json").read_text(encoding="utf-8"))
 df = pd.read_csv(locate("watermelon_training.csv"))
 TARGET, ID = cues["target"], cues["id_column"]
@@ -76,13 +57,9 @@ PRIMARY = [k for k, v in cues["cues"].items() if v["primary"]]
 ALL_CUE_COLS = [c for cols in CUE_COLS.values() for c in cols]
 COMPLETE = cues["all_complete_columns"]
 
-# variety, for the generalisation check. No vendor was recorded, so
-# leave-one-variety-out stands in for the preregistered leave-one-vendor-out.
 variety = (pd.read_csv(locate("watermelon_features.csv"))[["no", "type"]]
            .rename(columns={"no": ID}).set_index(ID)["type"].reindex(df[ID]).to_numpy())
 
-# ---------------------------------------------------------------- feature sets
-# Fixed here, before any result is read. No open-ended search.
 SETS: dict[str, list[str]] = {
     "baseline_mean": [],
     "primary":       [c for k in PRIMARY for c in CUE_COLS[k]],
@@ -91,9 +68,6 @@ SETS: dict[str, list[str]] = {
     "audio_only":    CUE_COLS["sound"],
     "all_measured":  COMPLETE,
 }
-# Per-cue ablation: dropping "sound" removes BOTH its columns, because the
-# question is "how much does the knock contribute", not "how much does pitch
-# add given decay". Matches the proposal's "all cues minus one, for each cue".
 SETS |= {f"minus_{k}": [c for k2, cols in CUE_COLS.items() if k2 != k for c in cols]
          for k in CUE_COLS}
 
@@ -102,10 +76,7 @@ OOF_CV = KFold(5, shuffle=True, random_state=SEED)
 
 
 def model_for(cols: list[str]):
-    """Ridge == a single linear neuron with MSE loss + weight decay, solved in
-    closed form. StandardScaler is INSIDE the pipeline for two reasons: so each
-    fold's means come from training data only, and because the L2 penalty is
-    scale-sensitive (mean_pitch ~200, webbing ~0.4)."""
+    """Scaled ridge; the scaler is inside the pipeline so each fold scales on its own training data."""
     if not cols:
         return DummyRegressor(strategy="mean")
     return Pipeline([("scale", StandardScaler()),
@@ -126,12 +97,8 @@ def evaluate(cols: list[str]) -> dict:
                                                    "neg_root_mean_squared_error"])
     mae = -s["test_neg_mean_absolute_error"]
     if cols:
-        # Spearman on out-of-fold predictions POOLED over all 25 melons: 5 melons
-        # per fold is far too few to rank meaningfully fold by fold.
         rho = spearmanr(oof_predict(cols), y).statistic
     else:
-        # the baseline predicts a constant per fold, so its out-of-fold ranking
-        # is an artefact of which fold each melon landed in - not a correlation
         rho = np.nan
     return dict(n_feat=len(cols), mae=mae.mean(), mae_sd=mae.std(),
                 rmse=-s["test_neg_root_mean_squared_error"].mean(), rho_oof=rho,
@@ -139,9 +106,7 @@ def evaluate(cols: list[str]) -> dict:
 
 
 def permutation_p(cols: list[str], real_mae: float) -> tuple[float, float]:
-    """Shuffle the labels and rerun the whole pipeline. If the real MAE does not
-    sit clearly below this null, the set carries no signal - and at n=25 this is
-    a far more trustworthy statement than eyeballing fold spreads."""
+    """Shuffle the labels and rerun the whole pipeline to get a null MAE distribution."""
     X, m = design(cols), model_for(cols)
     rng = np.random.default_rng(SEED)
     null = np.array([
@@ -152,14 +117,7 @@ def permutation_p(cols: list[str], real_mae: float) -> tuple[float, float]:
 
 
 def repeated_oof(cols: list[str], n_rep: int = 20) -> tuple[np.ndarray, np.ndarray]:
-    """Per-melon out-of-fold prediction and absolute error, averaged over n_rep
-    different 5-fold splits.
-
-    A single split's OOF errors inherit that split's luck. Built on one split,
-    the bootstrap below reported +22.7% for `primary` while the 100-fold table
-    said -13.0%, because that one split happened to be kind. Averaging first
-    makes the CI agree with the headline MAE.
-    """
+    """Per-melon out-of-fold prediction and absolute error, averaged over n_rep 5-fold splits."""
     preds = np.zeros((n_rep, len(y)))
     for r in range(n_rep):
         preds[r] = cross_val_predict(model_for(cols), design(cols), y,
@@ -170,14 +128,9 @@ def repeated_oof(cols: list[str], n_rep: int = 20) -> tuple[np.ndarray, np.ndarr
 
 
 def bootstrap_improvement(cols: list[str], base_err: np.ndarray) -> dict:
-    """PREREGISTERED: the success bar requires 'a CI that excludes no improvement'.
-
-    Paired bootstrap over melons on the out-of-fold absolute errors. Resampling
-    melons (not folds) is what makes this a statement about melons rather than
-    about one particular split.
-    """
+    """PREREGISTERED: the success bar requires 'a CI that excludes no improvement'."""
     err = repeated_oof(cols)[1]
-    diff = base_err - err                      # positive = model beats baseline
+    diff = base_err - err
     rng = np.random.default_rng(SEED)
     idx = rng.integers(0, len(y), size=(N_BOOT, len(y)))
     boot = diff[idx].mean(axis=1)
@@ -187,7 +140,6 @@ def bootstrap_improvement(cols: list[str], base_err: np.ndarray) -> dict:
                 pct_of_baseline=float(100 * diff.mean() / base_err.mean()))
 
 
-# ---------------------------------------------------------------- run
 print(f"Phase 1B - {len(df)} melons, target {TARGET}")
 print(f"{len(CUE_COLS)} cues in {len(ALL_CUE_COLS)} columns; "
       f"primary = {', '.join(PRIMARY)}")
@@ -196,12 +148,7 @@ for cue, why in cues["absent_cues"].items():
 
 rows = {name: evaluate(cols) for name, cols in SETS.items()}
 base = rows["baseline_mean"]["mae"]
-# The success bar must compare like with like. cues.json's target_mae_15pct came
-# from the IN-SAMPLE mean absolute deviation, but the baseline here is
-# cross-validated: a DummyRegressor predicts each training fold's mean onto
-# held-out melons, which is strictly worse. Holding a cross-validated model to a
-# target derived from an in-sample baseline is an unfairly hard bar, so the
-# target is recomputed from the CV baseline.
+# 15% bar from the cross-validated baseline, not the in-sample one in cues.json
 target = 0.85 * base
 print(f"\nbaseline: cross-validated {base:.3f}, in-sample "
       f"{cues['mean_baseline_mae']:.3f} degBrix")
@@ -223,7 +170,6 @@ for name, r in res.iterrows():
     print(f"{name:16s} {int(r.n_feat):2d} {r.mae:7.3f} {r.mae_sd:6.3f} "
           f"{r.rmse:6.3f} {r.rho_oof:+7.3f} {r.vs_base_pct:+7.1f}%{hit}")
 
-# ---------------------------------------------------------------- ablation
 print(f"\n{'=' * 74}\nPER-CUE ABLATION   (vs all_cues MAE "
       f"{rows['all_cues']['mae']:.3f})\n{'=' * 74}")
 full, full_sd = rows["all_cues"]["mae"], rows["all_cues"]["mae_sd"]
@@ -241,7 +187,6 @@ print("\ndMAE > 0 means removing the cue made predictions worse, i.e. it helped.
 print("At n=25 most rows land in 'cannot distinguish' - that is the honest")
 print("outcome, and it is not the same as 'the cue does not matter'.")
 
-# ---------------------------------------------------------------- bootstrap CI
 print(f"\n{'=' * 74}\nBOOTSTRAP 95% CI ON THE IMPROVEMENT   ({N_BOOT} resamples)")
 print(f"preregistered: the bar needs a CI that excludes no improvement\n{'=' * 74}")
 base_err = repeated_oof([])[1]
@@ -254,7 +199,6 @@ for name in ("primary", "all_cues", "visual_only", "audio_only", "all_measured")
           f"[{b['ci_lo']:+.3f}, {b['ci_hi']:+.3f}]  "
           f"({b['pct_of_baseline']:+.1f}%)  {mark}")
 
-# ---------------------------------------------------------------- nulls
 print(f"\n{'=' * 74}\nPERMUTATION NULL   ({N_PERM} shuffles)\n{'=' * 74}")
 perm = []
 for name in ("primary", "all_cues", "audio_only", "visual_only"):
@@ -266,7 +210,6 @@ for name in ("primary", "all_cues", "audio_only", "visual_only"):
     print(f"{name:14s} real {rows[name]['mae']:.3f}   null median "
           f"{np.median(null):.3f}   p = {p:.3f}   -> {flag}")
 
-# ---------------------------------------------------------------- transfer
 print(f"\n{'=' * 74}\nLEAVE-ONE-VARIETY-OUT   (stands in for leave-one-vendor-out;\n"
       f"no vendor was recorded)\n{'=' * 74}")
 transfer = []
@@ -282,7 +225,6 @@ for name in ("primary", "all_cues", "visual_only"):
 print("\nTrained on one variety, tested on the other. If this collapses while")
 print("5-fold looked fine, the model learned the variety rather than the melon.")
 
-# ---------------------------------------------------------------- model families
 print(f"\n{'=' * 74}\nMODEL FAMILY CHECK   (is ridge the bottleneck?)\n{'=' * 74}")
 FAMILIES = {
     "ridge":        lambda: RidgeCV(alphas=ALPHAS),
@@ -296,8 +238,6 @@ families = []
 for fname, mk in FAMILIES.items():
     row = {"model": fname}
     for sname in ("primary", "all_cues"):
-        # same OUTER cv as the main table, so ridge's number here matches the
-        # headline instead of being a second, differently-budgeted estimate
         pipe = Pipeline([("scale", StandardScaler()), ("est", mk())])
         mae = -cross_validate(pipe, design(SETS[sname]), y, cv=OUTER,
                               scoring="neg_mean_absolute_error")["test_score"]
@@ -307,7 +247,6 @@ for fname, mk in FAMILIES.items():
 print("\nAt n=25 the algorithm is not the limiting factor; the data is. Tree")
 print("models should lose to a shrunken linear model at this sample size.")
 
-# ---------------------------------------------------------------- shrinkage
 print(f"\n{'=' * 74}\nREGULARISATION STRENGTH\n{'=' * 74}")
 shrink = {}
 for name in ("primary", "all_cues", "all_measured"):
@@ -321,7 +260,6 @@ for name in ("primary", "all_cues", "all_measured"):
 print("\nRidge at alpha -> infinity IS the mean baseline, so a large alpha says")
 print("cross-validation chose to trust the features only weakly.")
 
-# ---------------------------------------------------------------- variety leak
 print(f"\n{'=' * 74}\nDOES VARIETY EXPLAIN IT?\n{'=' * 74}")
 is_sonya = (variety == "sonya").astype(float)[:, None]
 var_only = -cross_validate(DummyRegressor(strategy="mean"), is_sonya, y, cv=OUTER,
@@ -340,7 +278,6 @@ print(f"all_cues + variety       MAE {mae_plus:.3f}")
 print("\nIf the variety label alone rivals the cues, the cues may be measuring")
 print("which cultivar you bought rather than how ripe the fruit is.")
 
-# ---------------------------------------------------------------- learning curve
 print(f"\n{'=' * 74}\nLEARNING CURVE   (would more melons help?)\n{'=' * 74}")
 rng = np.random.default_rng(SEED)
 curve = []
@@ -360,15 +297,11 @@ for n in (12, 15, 18, 21, 25):
     print(f"n = {n:2d}   MAE {np.mean(vals):.3f} +- {np.std(vals):.3f}")
 print("\nA curve still falling at n=25 means more melons would buy real accuracy.")
 
-# ---------------------------------------------------------------- per melon
-# averaged over 20 splits, same basis as the bootstrap, so the scatter and the
-# CI tell the same story
 oof_primary = repeated_oof(SETS["primary"])[0]
 per_melon = [dict(melon_id=int(m), variety=str(v), actual=float(a),
                   predicted=float(p), error=float(p - a))
              for m, v, a, p in zip(df[ID], variety, y, oof_primary)]
 
-# ---------------------------------------------------------------- redundancy
 corr = df[ALL_CUE_COLS].corr(method="spearman").round(3)
 print(f"\n{'=' * 74}\nCUE REDUNDANCY   (|rho| > 0.5 between cues)\n{'=' * 74}")
 pairs = [(a, b, float(corr.loc[a, b])) for i, a in enumerate(corr.columns)
@@ -378,7 +311,6 @@ for a, b, r in sorted(pairs, key=lambda t: -abs(t[2])):
 if not pairs:
     print("  none - the cues carry largely independent information")
 
-# ---------------------------------------------------------------- write
 res.to_csv(HERE / "results_1b.csv")
 payload = {
     "n_melons": int(len(df)),

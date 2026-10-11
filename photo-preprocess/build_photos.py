@@ -1,12 +1,6 @@
 """Build photos/ from the original iPhone photos (Google Drive download).
 
-    pip install pillow pillow-heif
-    python build_photos.py "<unzipped drive folder>"
-
-Reads photo_map.csv (melon_file, drive_name) next to this script, finds each
-IMG_xxxx photo in the source folder (any extension, subfolders searched),
-fixes EXIF rotation, resizes to 2576 px wide and saves photos/NN_vK.jpg and
-photos/NN_id.jpg. Same conversion as step 2 of watermelon_features.ipynb.
+    python photo-preprocess/build_photos.py "<unzipped drive folder>"
 """
 import csv
 import sys
@@ -17,9 +11,9 @@ from pillow_heif import register_heif_opener
 
 register_heif_opener()
 
-TARGET_WIDTH = 2576      # every threshold in the notebook was tuned at this width
+TARGET_WIDTH = 2576
 HERE = Path(__file__).resolve().parent
-OUT_DIR = HERE / 'photos'
+OUT_DIR = HERE.parent / 'photos'
 
 
 def prepare(src, dst):

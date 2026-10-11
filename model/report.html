@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Watermelon Phase 1B</title>
+<title>Watermelon Phases 1A and 1B</title>
 <style>
 :root{color-scheme:light;
  --page:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e;
@@ -71,12 +71,28 @@ footer{color:var(--muted);font-size:12px;text-align:center;margin-top:26px}
 </style></head><body><div class="wrap">
 
 <h1>Evaluating Folk Heuristics for Choosing a Watermelon</h1>
-<p class="sub-head">Phase 1B &mdash; does combining the cues predict sweetness
-better than guessing the average? &nbsp;&middot;&nbsp; n = 25 melons
-&nbsp;&middot;&nbsp; generated 2026-10-11 20:28</p>
+<p class="sub-head">Phase 1A &mdash; does each cue matter on its own? &nbsp;&middot;&nbsp;
+Phase 1B &mdash; does combining the cues predict sweetness better than guessing
+the average? &nbsp;&middot;&nbsp; n = 25 melons
+&nbsp;&middot;&nbsp; generated 2026-10-11 20:42</p>
 
 <section>
-  <h2>Verdict</h2>
+  <h2>Phase 1A: does each cue matter on its own?</h2>
+  <p class="lede">Spearman correlation of each cue column with Brix, and a
+  permutation test: Brix shuffled 10,000 times. <i>p single</i> is how often chance
+  beats this cue alone. <i>p best of 7</i> is how often the strongest of all 7 cues
+  beats it by chance, which allows for having tested 7. Supported = p best of 7
+  below 0.05; suggestive = only p single below 0.05.</p>
+  <svg viewBox="0 0 760 216" class="chart" role="img"><line x1="375.0" y1="0" x2="375.0" y2="196" class="ref"/><text x="130" y="18.0" class="lbl" text-anchor="end">rind_gloss</text><rect class="bar" x="375.0" y="5" width="188.0" height="16" rx="3" fill="var(--s1)"><title>rind_gloss: rho +0.544, p (best of 7) 0.036, supported</title></rect><text x="620" y="18.0" class="val">+0.544</text><text x="130" y="46.0" class="lbl" text-anchor="end">decay_20db_s</text><rect class="bar" x="220.9" y="33" width="154.1" height="16" rx="3" fill="var(--s2)"><title>decay_20db_s: rho -0.446, p (best of 7) 0.169, suggestive</title></rect><text x="620" y="46.0" class="val">-0.446</text><text x="130" y="74.0" class="lbl" text-anchor="end">webbing</text><rect class="bar" x="375.0" y="61" width="92.9" height="16" rx="3" fill="var(--s1)"><title>webbing: rho +0.269, p (best of 7) 0.758, no evidence</title></rect><text x="620" y="74.0" class="val">+0.269</text><text x="130" y="102.0" class="lbl" text-anchor="end">mean_pitch</text><rect class="bar" x="302.0" y="89" width="73.0" height="16" rx="3" fill="var(--s2)"><title>mean_pitch: rho -0.211, p (best of 7) 0.916, no evidence</title></rect><text x="620" y="102.0" class="val">-0.211</text><text x="130" y="130.0" class="lbl" text-anchor="end">field_spot_area_pct</text><rect class="bar" x="303.9" y="117" width="71.1" height="16" rx="3" fill="var(--s2)"><title>field_spot_area_pct: rho -0.206, p (best of 7) 0.926, no evidence</title></rect><text x="620" y="130.0" class="val">-0.206</text><text x="130" y="158.0" class="lbl" text-anchor="end">bee_sting_density</text><rect class="bar" x="346.1" y="145" width="28.9" height="16" rx="3" fill="var(--s2)"><title>bee_sting_density: rho -0.084, p (best of 7) 1.000, no evidence</title></rect><text x="620" y="158.0" class="val">-0.084</text><text x="130" y="186.0" class="lbl" text-anchor="end">shape_uniformity</text><rect class="bar" x="375.0" y="173" width="26.2" height="16" rx="3" fill="var(--s1)"><title>shape_uniformity: rho +0.076, p (best of 7) 1.000, no evidence</title></rect><text x="620" y="186.0" class="val">+0.076</text></svg>
+  <div class="scroll"><table class="num"><thead><tr><th>column</th><th>cue</th><th>rho</th><th>p single</th><th>p best of 7</th><th>verdict</th><th>folklore</th></tr></thead><tbody><tr><td><code>rind_gloss</code></td><td>gloss</td><td>+0.544</td><td>0.004</td><td>0.036</td><td><span class="pill ok">supported</span></td><td>OPPOSITE</td></tr><tr><td><code>decay_20db_s</code></td><td>sound</td><td>-0.446</td><td>0.026</td><td>0.169</td><td><span class="pill ">suggestive</span></td><td>as claimed</td></tr><tr><td><code>webbing</code></td><td>webbing</td><td>+0.269</td><td>0.193</td><td>0.758</td><td><span class="pill no">no evidence</span></td><td>as claimed</td></tr><tr><td><code>mean_pitch</code></td><td>sound</td><td>-0.211</td><td>0.309</td><td>0.916</td><td><span class="pill no">no evidence</span></td><td>as claimed</td></tr><tr><td><code>field_spot_area_pct</code></td><td>field_spot</td><td>-0.206</td><td>0.311</td><td>0.926</td><td><span class="pill no">no evidence</span></td><td>OPPOSITE</td></tr><tr><td><code>bee_sting_density</code></td><td>bee_stings</td><td>-0.084</td><td>0.690</td><td>1.000</td><td><span class="pill no">no evidence</span></td><td>flat</td></tr><tr><td><code>shape_uniformity</code></td><td>shape</td><td>+0.076</td><td>0.710</td><td>1.000</td><td><span class="pill no">no evidence</span></td><td>flat</td></tr></tbody></table></div>
+  <p class="cap">Folklore compares the sign with the folk claim in
+  <code>cues.json</code>. Rind gloss is the only supported cue, and it goes the
+  opposite way: shinier melons were sweeter. Source:
+  <code>results/cue_results.csv</code>, written by notebook step 26.</p>
+</section>
+
+<section>
+  <h2>Phase 1B: verdict</h2>
   <p class="lede">Both preregistered criteria had to be met.</p>
   <p class="hero no">Success bar NOT MET</p>
   <div class="verdict">
@@ -275,6 +291,6 @@ better than guessing the average? &nbsp;&middot;&nbsp; n = 25 melons
   <ul><li>n=25: any difference smaller than the fold sd is not a result.</li><li>The success bar is recomputed from the CROSS-VALIDATED baseline; cues.json&#x27;s target_mae_15pct came from the in-sample deviation and is an unfairly hard bar for a cross-validated model.</li><li>The only set under the bar is an ablation variant (minus_shape). Promoting it would be selection after seeing results.</li><li>No noise floor is available: the three Brix readings are top/middle/bottom of the cut face, so their spread is the radial gradient, not refractometer error.</li><li>Leave-one-variety-out has only 2 groups, so it is coarse.</li><li>Cue 2 (weight) and cue 6 (stripe width) were never testable.</li></ul>
 </section>
 
-<footer>Built by report.py from results_1b.json &middot;
+<footer>Built by report.py from results_1b.json and results/cue_results.csv &middot;
 rerun: <code>python train_1b.py &amp;&amp; python report.py</code></footer>
 </div></body></html>

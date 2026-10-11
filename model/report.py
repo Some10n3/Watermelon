@@ -1,16 +1,10 @@
-"""Build report.html from results_1b.json.
+"""Build report.html from results_1b.json and results/cue_results.csv.
 
-Charts are inline SVG against CSS custom properties, not rendered images: a PNG
-cannot restep itself for a dark surface, and every mark here wants a hover label.
-
-Palette is the dataviz reference instance, categorical slots 1-3 (blue, orange,
-aqua), validated all-pairs in both modes. Light-mode aqua sits at 2.74:1 on the
-surface, so the relief rule applies: every chart ships direct labels and a table.
-
-Run:  python report.py        then open report.html, or serve the folder.
+Run:  python model/report.py
 """
 from __future__ import annotations
 
+import csv
 import json
 from datetime import datetime
 from html import escape
@@ -25,21 +19,13 @@ SETS = R["feature_sets"]
 PRIMARY_MAE = SETS["primary"]["mae"]
 
 
-# ----------------------------------------------------------------- svg helpers
 def _t(text: str) -> str:
     return f"<title>{escape(text)}</title>"
 
 
 def dotplot(items, *, ref=None, ref_label="", h=27, w=760, pad_left=168,
             color=None):
-    """Dot plot with error bars. items: [(label, value, err, tooltip)].
-
-    A dot plot, not bars: every MAE here sits between 0.93 and 1.12, and bars -
-    which must start at zero or they lie about ratios - would render twelve
-    near-identical lengths. A dot encodes position, so a non-zero axis is honest
-    and the differences become visible. The error bar is +-1 fold sd, which is
-    the whole point: most of these gaps are smaller than it.
-    """
+    """Dot plot with error bars. items: [(label, value, err, tooltip)]."""
     lo = min(v - e for _, v, e, _ in items)
     hi_ = max(v + e for _, v, e, _ in items)
     if ref is not None:
@@ -61,8 +47,6 @@ def dotplot(items, *, ref=None, ref_label="", h=27, w=760, pad_left=168,
             f'<circle cx="{X(v):.1f}" cy="{y}" r="5" fill="{c}" '
             f'stroke="var(--surface)" stroke-width="2">{_t(tip)}</circle>'
             f'<text x="{w - 72}" y="{y + 4}" class="val">{v:.3f}</text>')
-    # the reference line is drawn AFTER the marks: emitted first, the marks
-    # painted straight over it and it was invisible
     refline = ""
     if ref is not None:
         rx = X(ref)
@@ -294,12 +278,11 @@ def table(headers, rows, cls=""):
     return f'<table class="{cls}"><thead><tr>{h}</tr></thead><tbody>{b}</tbody></table>'
 
 
-# ----------------------------------------------------------------- sections
 DEFS = R["set_definitions"]
 
-# visual_only and minus_sound are the SAME five columns - sound is the only
-# non-visual cue, so "all cues except sound" and "visual cues only" coincide.
-# Showing both as separate rows implied two findings where there is one.
+# Sets with identical column lists are collapsed to one row: visual_only and
+# minus_sound are the same five columns, because sound is the only non-visual
+# cue, and showing both implied two findings where there is one.
 DUPES = {a: b for i, a in enumerate(DEFS) for b in list(DEFS)[i + 1:]
          if DEFS[a] and DEFS[a] == DEFS[b]}
 ORDER = [k for k in sorted(SETS, key=lambda k: SETS[k]["mae"])
@@ -419,12 +402,32 @@ cue_rows = "".join(
 absent_rows = "".join(f"<li><b>{escape(c)}</b> &mdash; {escape(w)}</li>"
                       for c, w in R["absent_cues"].items())
 
+with open(HERE.parent / "results" / "cue_results.csv", newline="", encoding="utf-8") as f:
+    A1 = list(csv.DictReader(f))
+for r in A1:
+    for k in ("spearman_rho", "p_single", "p_best_of_7"):
+        r[k] = float(r[k])
+
+a1_svg = divbar(
+    [(r["column"], r["spearman_rho"],
+      f"{r['column']}: rho {r['spearman_rho']:+.3f}, p (best of 7) "
+      f"{r['p_best_of_7']:.3f}, {r['verdict']}")
+     for r in sorted(A1, key=lambda r: -abs(r["spearman_rho"]))])
+
+A1_PILL = {"supported": "ok", "suggestive": "", "no evidence": "no"}
+a1_tab = table(
+    ["column", "cue", "rho", "p single", "p best of 7", "verdict", "folklore"],
+    [[f"<code>{escape(r['column'])}</code>", escape(r["cue"]),
+      f"{r['spearman_rho']:+.3f}", f"{r['p_single']:.3f}", f"{r['p_best_of_7']:.3f}",
+      f'<span class="pill {A1_PILL[r["verdict"]]}">{escape(r["verdict"])}</span>',
+      escape(r["folk"])] for r in A1], "num")
+
 VERDICT = ("MET" if (crit_mae and crit_ci) else "NOT MET")
 
 HTML = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Watermelon Phase 1B</title>
+<title>Watermelon Phases 1A and 1B</title>
 <style>
 :root{{color-scheme:light;
  --page:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e;
@@ -494,12 +497,28 @@ footer{{color:var(--muted);font-size:12px;text-align:center;margin-top:26px}}
 </style></head><body><div class="wrap">
 
 <h1>Evaluating Folk Heuristics for Choosing a Watermelon</h1>
-<p class="sub-head">Phase 1B &mdash; does combining the cues predict sweetness
-better than guessing the average? &nbsp;&middot;&nbsp; n = {R['n_melons']} melons
+<p class="sub-head">Phase 1A &mdash; does each cue matter on its own? &nbsp;&middot;&nbsp;
+Phase 1B &mdash; does combining the cues predict sweetness better than guessing
+the average? &nbsp;&middot;&nbsp; n = {R['n_melons']} melons
 &nbsp;&middot;&nbsp; generated {datetime.now():%Y-%m-%d %H:%M}</p>
 
 <section>
-  <h2>Verdict</h2>
+  <h2>Phase 1A: does each cue matter on its own?</h2>
+  <p class="lede">Spearman correlation of each cue column with Brix, and a
+  permutation test: Brix shuffled 10,000 times. <i>p single</i> is how often chance
+  beats this cue alone. <i>p best of 7</i> is how often the strongest of all 7 cues
+  beats it by chance, which allows for having tested 7. Supported = p best of 7
+  below 0.05; suggestive = only p single below 0.05.</p>
+  {a1_svg}
+  <div class="scroll">{a1_tab}</div>
+  <p class="cap">Folklore compares the sign with the folk claim in
+  <code>cues.json</code>. Rind gloss is the only supported cue, and it goes the
+  opposite way: shinier melons were sweeter. Source:
+  <code>results/cue_results.csv</code>, written by notebook step 26.</p>
+</section>
+
+<section>
+  <h2>Phase 1B: verdict</h2>
   <p class="lede">Both preregistered criteria had to be met.</p>
   <p class="hero {'ok' if VERDICT=='MET' else 'no'}">Success bar {VERDICT}</p>
   <div class="verdict">
@@ -699,7 +718,7 @@ better than guessing the average? &nbsp;&middot;&nbsp; n = {R['n_melons']} melon
   <ul>{''.join(f'<li>{escape(c)}</li>' for c in R['caveats'])}</ul>
 </section>
 
-<footer>Built by report.py from results_1b.json &middot;
+<footer>Built by report.py from results_1b.json and results/cue_results.csv &middot;
 rerun: <code>python train_1b.py &amp;&amp; python report.py</code></footer>
 </div></body></html>"""
 
